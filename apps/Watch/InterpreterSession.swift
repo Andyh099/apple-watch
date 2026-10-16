@@ -427,7 +427,10 @@ final class InterpreterSession: ObservableObject {
         }
         diagnostic("reconnect_attempt=\(reconnectAttempts)")
         notice = "连接中断，正在重连…"
-        reset()
+        // Keep the extended runtime session alive across the reconnect:
+        // tearing it down here used to let the system suspend the app
+        // mid-session (black screen after a couple of sentences).
+        reset(keepExtendedRuntime: true)
         phase = .idle
         isReconnecting = true
         Task { [weak self] in await self?.start() }
@@ -441,9 +444,12 @@ final class InterpreterSession: ObservableObject {
     }
 
     /// Keep the app foreground-active for the whole session so the screen
-    /// does not sleep mid-translation. Ended in reset().
+    /// does not sleep mid-translation. Ended in reset() unless the reset is
+    /// part of an auto-reconnect (the keep-alive must survive reconnects —
+    /// invalidating it mid-session lets the system suspend the app and the
+    /// screen goes black).
     private func beginExtendedRuntime() {
-        endExtendedRuntime()
+        guard runtimeSession == nil else { return }
         let rs = WKExtendedRuntimeSession()
         runtimeSession = rs
         rs.start()
@@ -454,14 +460,14 @@ final class InterpreterSession: ObservableObject {
         runtimeSession = nil
     }
 
-    private func reset() {
+    private func reset(keepExtendedRuntime: Bool = false) {
         microphoneReceiving = false
         activity = nil
         isReconnecting = false
         currentID = UUID()
         timeout?.cancel()
         sessionTimer?.cancel()
-        endExtendedRuntime()
+        if !keepExtendedRuntime { endExtendedRuntime() }
         uploadQueue?.cancel()
         uploadQueue = nil
         sender?.cancel()
