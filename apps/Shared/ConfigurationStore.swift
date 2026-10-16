@@ -162,7 +162,7 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
 
     /// Offline pipeline: watch sends utterance audio files here (iPhone),
     /// iPhone replies with user-info dictionaries (watch).
-    func session(_ session: WCSession, didReceiveFile file: WCSessionFile) {
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
         #if os(iOS)
         OfflineTranslationEngine.shared.receivedFile(file)
         #endif
