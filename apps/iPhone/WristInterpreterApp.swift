@@ -71,7 +71,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.orange)
                         }
                     } header: { Text("离线引擎") } footer: {
-                        Text("离线模式按句话翻译：手表上点开始说话、点结束，译文在手表外放并显示字幕。手机需在蓝牙范围内。")
+                        Text("离线连续翻译：手表上点开始后直接说话，自动分句、逐句翻译外放；点结束停止。手机需在蓝牙范围内。")
                     }
                 }
 

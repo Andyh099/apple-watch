@@ -63,7 +63,7 @@ struct InterpreterView: View {
             session.displayChanged(isActive: value == .active, isDimmed: isLuminanceReduced)
             if value == .background {
                 session.backgrounded()
-                offline.cancel()
+                offline.stop()
             }
             if value == .active {
                 if pendingSiriStart {
@@ -82,8 +82,8 @@ struct InterpreterView: View {
     private var offlineView: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: offline.phase == .recording ? "waveform" : "waveform.slash")
-                    .foregroundStyle(offline.phase == .recording ? Color.green : Color.gray)
+                Image(systemName: offline.phase == .listening ? "waveform" : "waveform.slash")
+                    .foregroundStyle(offline.phase == .listening ? Color.green : Color.gray)
                 Text(offlineStatus).font(.caption2).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 10) {
@@ -102,29 +102,25 @@ struct InterpreterView: View {
                         .lineSpacing(6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if offline.sourceText.isEmpty {
-                    Text(offline.phase == .recording ? "说话中…说完点「结束说话」" : "点开始说话，对着手表说一句话")
+                    Text(offline.phase == .listening ? "直接说话，自动分句翻译…" : "点开始后直接说话，无需逐句点按")
                         .font(.body).foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 4)
+            if offline.utteranceCount > 0 {
+                Text("已翻译 \(offline.utteranceCount) 句").font(.caption2).foregroundStyle(.secondary)
+            }
             if let notice = offline.notice {
                 Text(notice).font(.caption2).foregroundStyle(.orange)
             }
             if case .failed(let message) = offline.phase {
                 Text(message).font(.caption2).foregroundStyle(.orange)
             }
-            switch offline.phase {
-            case .recording:
-                Button("结束说话", role: .destructive) { offline.stop() }
-            case .waiting:
-                HStack {
-                    Text("手机端翻译中…").font(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("取消", role: .destructive) { offline.cancel() }.font(.caption2)
-                }
-            case .idle, .failed:
-                Button("开始说话") { offline.start() }.buttonStyle(.borderedProminent)
-                Text("离线模式 · \(configuration.languagePair.shortName)：说一句→点结束，译文在手表外放")
+            if offline.isRunning {
+                Button("结束连续翻译", role: .destructive) { offline.stop() }
+            } else {
+                Button("开始连续翻译") { offline.start() }.buttonStyle(.borderedProminent)
+                Text("离线模式 · \(configuration.languagePair.shortName)：全程不联网，译文在手表外放")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -133,8 +129,7 @@ struct InterpreterView: View {
     private var offlineStatus: String {
         switch offline.phase {
         case .idle: return "离线就绪 · \(configuration.languagePair.shortName)"
-        case .recording: return "录音中…"
-        case .waiting: return "手机端翻译中…"
+        case .listening: return "连续翻译中…"
         case .failed: return "已停止"
         }
     }

@@ -115,7 +115,28 @@ final class OfflineTranslationEngine {
 
     /// Called from ConfigurationStore's WCSession delegate (iPhone side).
     nonisolated func receivedFile(_ file: WCSessionFile) {
-        Task { await OfflineTranslationEngine.shared.handle(file) }
+        Task { await OfflineTranslationEngine.shared.enqueue(file) }
+    }
+
+    /// Serial queue: utterances are processed in arrival order so the
+    /// watch speaks translations back in the order they were spoken.
+    private var queue: [WCSessionFile] = []
+    private var processing = false
+
+    private func enqueue(_ file: WCSessionFile) {
+        queue.append(file)
+        processNext()
+    }
+
+    private func processNext() {
+        guard !processing, !queue.isEmpty else { return }
+        processing = true
+        let file = queue.removeFirst()
+        Task {
+            await self.handle(file)
+            self.processing = false
+            self.processNext()
+        }
     }
 
     private func handle(_ file: WCSessionFile) async {
