@@ -57,7 +57,10 @@ if [ -z "${WATCH_ID:-}" ]; then
   WATCH_ID=$(detect_device_id "watch")
 fi
 [ -n "${WATCH_ID:-}" ] || { echo "没找到手表：请确认手表已解锁、开开发者模式、与 Mac 在同一 Wi-Fi 下，然后重试；或用 WATCH_ID=<设备标识> 指定（devicectl list devices 查看）"; exit 1; }
-devicectl device install app --device "$WATCH_ID" "$APP"
+devicectl device install app --device "$WATCH_ID" "$APP" || {
+  echo "手表安装失败：请确认手表已解锁、开开发者模式、与 Mac 在同一 Wi-Fi 下，然后重试"
+  exit 1
+}
 # 4. 构建手机 App 并安装到手机（新图标）
 xcodebuild -project WristInterpreter.xcodeproj \
   -scheme WristInterpreter \
@@ -74,7 +77,11 @@ if [ -z "${IPHONE_ID:-}" ]; then
   IPHONE_ID=$(detect_device_id "iphone")
 fi
 [ -n "${IPHONE_ID:-}" ] || { echo "没找到手机：请解锁手机、靠近 Mac 后重试，或用 IPHONE_ID=<设备标识> 指定（devicectl list devices 查看）"; exit 1; }
-devicectl device install app --device "$IPHONE_ID" "$IPHONE_APP"
+devicectl device install app --device "$IPHONE_ID" "$IPHONE_APP" || {
+  echo "手机安装失败：常见原因是 iPhone 锁屏/息屏了。请解锁 iPhone 并保持亮屏，然后只重装手机 App，无需重新构建："
+  echo "  devicectl device install app --device $IPHONE_ID $IPHONE_APP"
+  exit 1
+}
 echo "手机 App 安装完成"
 
 echo "全部完成。手表上点开始翻译实测；结束后续看验收清单 docs/acceptance.md。"
