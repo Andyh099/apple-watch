@@ -128,7 +128,7 @@ target_ids.append(widget_target)
 widget_proxy = add("widget:proxy", "PBXContainerItemProxy", containerPortal=ident("project"), proxyType=1, remoteGlobalIDString=widget_target, remoteInfo=widget_name)
 widget_dependency = add("widget:dependency", "PBXTargetDependency", target=widget_target, targetProxy=widget_proxy)
 widget_embed_file = add("widget:embed-file", "PBXBuildFile", fileRef=products[widget_name], settings={"ATTRIBUTES": ["CodeSignOnCopy", "RemoveHeadersOnCopy"]})
-widget_embed_phase = add("widget:embed-phase", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="$(CONTENTS_FOLDER_PATH)/PlugIns", dstSubfolderSpec=13, files=[widget_embed_file], name="Embed App Extensions", runOnlyForDeploymentPostprocessing=0)
+widget_embed_phase = add("widget:embed-phase", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="", dstSubfolderSpec=13, files=[widget_embed_file], name="Embed App Extensions", runOnlyForDeploymentPostprocessing=0)
 watch_target_obj = objects[ident("target:WristInterpreterWatch")]
 watch_target_obj["buildPhases"].append(widget_embed_phase)
 watch_target_obj["dependencies"].append(widget_dependency)
