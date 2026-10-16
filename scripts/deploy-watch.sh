@@ -35,10 +35,14 @@ APP=$(find "$DERIVED/Build/Products" -maxdepth 2 -name "WristInterpreterWatch.ap
 codesign --verify --deep --strict "$APP" && echo "签名校验通过"
 
 # 3. 安装到手表
+# 从 devicectl 列表里按标识格式（8位-16位）提取设备，名字里有空格也不怕
+detect_device_id() {
+  devicectl list devices 2>/dev/null | grep -i "$1" | grep -oE '[0-9A-Za-z]{8}-[0-9A-Za-z]{16}' | head -1 || true
+}
 if [ -z "${WATCH_ID:-}" ]; then
-  WATCH_ID=$(devicectl list devices 2>/dev/null | grep -i "watch" | head -1 | awk '{print $1}' || true)
+  WATCH_ID=$(detect_device_id "watch")
 fi
-[ -n "${WATCH_ID:-}" ] || { echo "没找到手表：请解锁手表、靠近 Mac 后重试，或用 WATCH_ID=<设备标识> 指定"; exit 1; }
+[ -n "${WATCH_ID:-}" ] || { echo "没找到手表：请确认手表已解锁、开开发者模式、与 Mac 在同一 Wi-Fi 下，然后重试；或用 WATCH_ID=<设备标识> 指定（devicectl list devices 查看）"; exit 1; }
 devicectl device install app --device "$WATCH_ID" "$APP"
 # 4. 构建手机 App 并安装到手机（新图标）
 xcodebuild -project WristInterpreter.xcodeproj \
@@ -52,9 +56,9 @@ IPHONE_APP=$(find "$DERIVED/Build/Products" -maxdepth 2 -name "WristInterpreter.
 [ -n "$IPHONE_APP" ] || { echo "没找到手机构建产物，构建可能失败"; exit 1; }
 codesign --verify --deep --strict "$IPHONE_APP" && echo "手机 App 签名校验通过"
 if [ -z "${IPHONE_ID:-}" ]; then
-  IPHONE_ID=$(devicectl list devices 2>/dev/null | grep -i "iphone" | head -1 | awk '{print $1}' || true)
+  IPHONE_ID=$(detect_device_id "iphone")
 fi
-[ -n "${IPHONE_ID:-}" ] || { echo "没找到手机：请连接手机后重试，或用 IPHONE_ID=<设备标识> 指定"; exit 1; }
+[ -n "${IPHONE_ID:-}" ] || { echo "没找到手机：请解锁手机、靠近 Mac 后重试，或用 IPHONE_ID=<设备标识> 指定（devicectl list devices 查看）"; exit 1; }
 devicectl device install app --device "$IPHONE_ID" "$IPHONE_APP"
 echo "手机 App 安装完成"
 
