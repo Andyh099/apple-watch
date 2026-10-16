@@ -7,12 +7,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."   # 仓库根目录
 
-# 1. 拉最新（仓库还没推 GitHub 时跳过，用本地代码构建）
+# 1. 拉最新（仓库还没推 GitHub 时跳过，用本地代码构建），然后重新生成工程
+#    （保证新增的 Swift 文件进入编译；幂等，重复运行无变化）
 if git remote get-url origin >/dev/null 2>&1; then
   git pull --ff-only
 else
   echo "未配置 git remote，跳过拉取，用本地代码构建。"
 fi
+python3 scripts/generate-project.py
 
 # 2. 生成 App 图标（macOS 自带 sips，无需装依赖）
 python3 scripts/generate-icons.py
