@@ -9,8 +9,14 @@ cd "$(dirname "$0")/.."   # 仓库根目录
 
 # 1. 拉最新（仓库还没推 GitHub 时跳过，用本地代码构建），然后重新生成工程
 #    （保证新增的 Swift 文件进入编译；幂等，重复运行无变化）
+#    注意：脚本更新了自己后必须重跑新版本，否则 bash 继续执行的是旧缓冲内容。
 if git remote get-url origin >/dev/null 2>&1; then
+  BEFORE=$(git rev-parse HEAD)
   git pull --ff-only
+  if [ "$(git rev-parse HEAD)" != "$BEFORE" ]; then
+    echo "脚本已更新，重新执行新版本…"
+    exec bash "$0" "$@"
+  fi
 else
   echo "未配置 git remote，跳过拉取，用本地代码构建。"
 fi
