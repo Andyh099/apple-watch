@@ -12,10 +12,13 @@ cd "$(dirname "$0")/.."   # 仓库根目录
 #    注意：脚本更新了自己后必须重跑新版本，否则 bash 继续执行的是旧缓冲内容。
 if git remote get-url origin >/dev/null 2>&1; then
   BEFORE=$(git rev-parse HEAD)
-  git pull --ff-only
-  if [ "$(git rev-parse HEAD)" != "$BEFORE" ]; then
-    echo "脚本已更新，重新执行新版本…"
-    exec bash "$0" "$@"
+  if git pull --ff-only; then
+    if [ "$(git rev-parse HEAD)" != "$BEFORE" ]; then
+      echo "脚本已更新，重新执行新版本…"
+      exec bash "$0" "$@"
+    fi
+  else
+    echo "⚠️ 拉取 GitHub 失败（可能是网络问题），用本地代码继续构建。"
   fi
 else
   echo "未配置 git remote，跳过拉取，用本地代码构建。"
