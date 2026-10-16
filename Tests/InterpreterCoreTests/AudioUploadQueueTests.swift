@@ -60,11 +60,9 @@ final class AudioUploadQueueTests: XCTestCase {
         queue.cancel()
     }
 
-    func testSustainedSlowSendCatchesUpWithoutIncreasingQueueOrDroppingAudio() throws {
-        // Screenshot: a 300ms batch was still in flight after 565ms. Model
-        // per-message completion delay, not a measurement of real throughput.
-        // Include bounded jitter and a brief stall, with the same 2s budget.
-        for delays in [[600], [750], [900], [200, 600, 800, 450], [100, 1_200, 100, 100, 100, 100]] {
+    func testSustainedSlowSendCatchesUpWithoutDroppingAudio() throws {
+        // Delays the 2s age budget absorbs: every accepted byte must be sent.
+        for delays in [[600], [750], [900], [200, 600, 800, 450]] {
             let queue = AudioUploadQueue()
             var completion: Int?
             var transmitted = Data()
@@ -96,9 +94,37 @@ final class AudioUploadQueueTests: XCTestCase {
                 }
             }
             XCTAssertEqual(transmitted, expected)
+            XCTAssertEqual(queue.diagnostics().droppedMilliseconds, 0)
             XCTAssertNil(completion, "All accepted audio must complete before the test ends")
             XCTAssertGreaterThan(largestBatch, 14_400, "Must exceed the old 300ms throughput ceiling")
         }
+    }
+
+    func testBriefStallDropsStaleAudioAndStaysLive() throws {
+        // A 1200ms stall exceeds the 2s age budget: stale audio is skipped,
+        // the queue never overflows, and the session keeps accepting.
+        let queue = AudioUploadQueue()
+        defer { queue.cancel() }
+        var completion: Int?
+        var transmitted = Data()
+        var overflowed = false
+        for nowMs in stride(from: 0, through: 10_000, by: 10) {
+            let now = Double(nowMs) / 1_000
+            if completion == nowMs { queue.sent(); completion = nil }
+            if nowMs.isMultiple(of: 100) {
+                if case .overflow = queue.enqueue(frame(), now: now) { overflowed = true }
+            }
+            if completion == nil, let batch = try queue.takeBatch(now: now) {
+                XCTAssertLessThanOrEqual(batch.data.count, 48_000)
+                transmitted.append(batch.data)
+                completion = nowMs + 1_200
+            }
+            let snapshot = queue.diagnostics(now: now)
+            XCTAssertLessThanOrEqual(snapshot.pendingMilliseconds + snapshot.inFlightMilliseconds, 2_000)
+        }
+        XCTAssertFalse(overflowed, "Slow transport must degrade into gaps, not stop the session")
+        XCTAssertGreaterThan(queue.diagnostics().droppedMilliseconds, 0, "Stale audio must be skipped to stay live")
+        XCTAssertGreaterThan(transmitted.count, 0)
     }
 
     func testLargerBatchIsCappedAtRelayLimitAndDoesNotWaitForMoreAudio() throws {
@@ -116,7 +142,9 @@ final class AudioUploadQueueTests: XCTestCase {
         XCTAssertNil(try queue.takeBatch(now: 0.1))
     }
 
-    func testPersistentlyInsufficientTransportStillStopsWithinOriginalBudget() throws {
+    func testPersistentlySlowTransportDropsStaleInsteadOfStopping() throws {
+        // 1100ms sends can never keep up: stale audio is skipped so the
+        // session stays live, instead of stopping on overflow.
         let queue = AudioUploadQueue()
         defer { queue.cancel() }
         var completion: Int?
@@ -125,10 +153,7 @@ final class AudioUploadQueueTests: XCTestCase {
             let now = Double(nowMs) / 1_000
             if completion == nowMs { queue.sent(); completion = nil }
             if nowMs.isMultiple(of: 100) {
-                if case .overflow = queue.enqueue(frame(), now: now) {
-                    overflowed = true
-                    break
-                }
+                if case .overflow = queue.enqueue(frame(), now: now) { overflowed = true }
             }
             if completion == nil, let _ = try queue.takeBatch(now: now) {
                 completion = nowMs + 1_100
@@ -136,28 +161,34 @@ final class AudioUploadQueueTests: XCTestCase {
             let snapshot = queue.diagnostics(now: now)
             XCTAssertLessThanOrEqual(snapshot.pendingMilliseconds + snapshot.inFlightMilliseconds, 2_000)
         }
-        XCTAssertTrue(overflowed, "A batch cap must not conceal persistently insufficient transport")
+        XCTAssertFalse(overflowed, "Slow transport must degrade into gaps, not overflow")
+        XCTAssertGreaterThan(queue.diagnostics().droppedMilliseconds, 0)
     }
 
-    func testByteBudgetIncludesInFlightAndDoesNotGrowWithoutBound() throws {
+    func testByteBudgetDropsStaleInsteadOfPoisoningQueue() throws {
         let queue = AudioUploadQueue()
         queue.enqueue(frame(), now: 0)
-        _ = try queue.takeBatch(now: 0)
+        _ = try queue.takeBatch(now: 0) // 100ms in flight
         for _ in 1..<20 { if case .accepted = queue.enqueue(frame(), now: 0.1) {} else { XCTFail() } }
+        // Momentarily over the byte budget: transient overflow, queue stays usable.
         if case .overflow = queue.enqueue(frame(), now: 0.2) {} else { XCTFail("Must bound pending plus in-flight") }
-        if case .closed = queue.enqueue(frame(), now: 0.3) {} else { XCTFail() }
-        queue.sent()
-        XCTAssertThrowsError(try queue.takeBatch(now: 0.3))
+        queue.sent() // in-flight completes, budget frees
+        if case .accepted = queue.enqueue(frame(), now: 0.3) {} else { XCTFail("Queue must recover after drain") }
+        let batch = try XCTUnwrap(queue.takeBatch(now: 0.4))
+        XCTAssertEqual(batch.data.count, 48_000) // capped at the 1s batch limit
     }
 
-    func testStalledSendAndStaleQueuedAudioAreRejectedByAge() throws {
+    func testStalledSendAndStaleQueuedAudioAreSkippedNotRejected() throws {
         let stalled = AudioUploadQueue()
         stalled.enqueue(frame(), now: 0)
         _ = try stalled.takeBatch(now: 0)
-        if case .overflow = stalled.enqueue(frame(), now: 2) {} else { XCTFail() }
+        // A stuck send must not stop the session: new audio is still accepted.
+        if case .accepted = stalled.enqueue(frame(), now: 2) {} else { XCTFail("Must stay live during a stalled send") }
         let stale = AudioUploadQueue()
         stale.enqueue(frame(), now: 0)
-        XCTAssertThrowsError(try stale.takeBatch(now: 2))
+        // Stale queued audio is skipped, not thrown.
+        XCTAssertNil(try stale.takeBatch(now: 2))
+        XCTAssertEqual(stale.diagnostics(now: 2).droppedMilliseconds, 100)
     }
 
     func testFinishDrainsAcceptedAudioButCancelDiscardsIt() throws {

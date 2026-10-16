@@ -11,6 +11,7 @@ public final class AudioUploadQueue: @unchecked Sendable {
         public let oldestMilliseconds: Int
         public let sendWaitingMilliseconds: Int
         public let completedBatches: Int
+        public let droppedMilliseconds: Int
     }
     public struct Batch: Sendable {
         public let data: Data
@@ -26,6 +27,7 @@ public final class AudioUploadQueue: @unchecked Sendable {
     }
     private var pending: [Frame] = []
     private var pendingBytes = 0
+    private var droppedBytes = 0
     private var inFlight: Frame?
     private var sendStartedAt: TimeInterval?
     private var completedBatches = 0
@@ -39,6 +41,18 @@ public final class AudioUploadQueue: @unchecked Sendable {
     private let batchBytes = AudioFrameBuffer.bytesPerSecond
     private let frameBytes = AudioFrameBuffer.bytesPerSecond / 10
 
+    /// Drop pending audio older than the keep window. Stale speech is skipped
+    /// so a slow uplink degrades into a gap instead of killing the session.
+    /// In-flight audio is never touched: its send finishes or fails on its own.
+    private func dropStaleLocked(keepingMilliseconds: Int, now: TimeInterval) {
+        let cutoff = now - Double(keepingMilliseconds) / 1000.0
+        while let first = pending.first, first.receivedAt < cutoff {
+            droppedBytes += first.data.count
+            pendingBytes -= first.data.count
+            pending.removeFirst()
+        }
+    }
+
     public init() {
         let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         signals = stream
@@ -51,10 +65,14 @@ public final class AudioUploadQueue: @unchecked Sendable {
             guard accepting, !cancelled, !failed else { return .closed }
             guard !data.isEmpty, data.count % 2 == 0, data.count <= frameBytes else { return .invalidFrame }
             let oldest = inFlight?.receivedAt ?? pending.first?.receivedAt ?? now
-            guard pendingBytes + (inFlight?.data.count ?? 0) + data.count <= maxBytes,
-                  now - oldest < 2 else {
-                failed = true
-                return .overflow
+            if now - oldest >= 2 {
+                // Uplink can't keep up: skip the stale audio and stay live.
+                dropStaleLocked(keepingMilliseconds: 500, now: now)
+            }
+            if pendingBytes + (inFlight?.data.count ?? 0) + data.count > maxBytes {
+                // Still full (a send is stuck): drop more rather than fail.
+                dropStaleLocked(keepingMilliseconds: 250, now: now)
+                guard pendingBytes + (inFlight?.data.count ?? 0) + data.count <= maxBytes else { return .overflow }
             }
             pending.append(Frame(data: data, receivedAt: now))
             pendingBytes += data.count
@@ -69,11 +87,10 @@ public final class AudioUploadQueue: @unchecked Sendable {
             guard !cancelled else { return nil }
             guard !failed else { throw Failure.backlog }
             guard inFlight == nil else { throw Failure.concurrentSend }
-            guard let first = pending.first else { return nil }
-            guard now - first.receivedAt < 2 else {
-                failed = true
-                throw Failure.backlog
+            if let first = pending.first, now - first.receivedAt >= 2 {
+                dropStaleLocked(keepingMilliseconds: 500, now: now)
             }
+            guard let first = pending.first else { return nil }
             let backlogMilliseconds = pendingBytes * 1_000 / AudioFrameBuffer.bytesPerSecond
             var data = Data()
             while let frame = pending.first, data.count + frame.data.count <= batchBytes {
@@ -106,7 +123,8 @@ public final class AudioUploadQueue: @unchecked Sendable {
                 inFlightMilliseconds: (inFlight?.data.count ?? 0) * 1_000 / AudioFrameBuffer.bytesPerSecond,
                 oldestMilliseconds: max(0, Int((now - oldest) * 1_000)),
                 sendWaitingMilliseconds: max(0, Int((now - (sendStartedAt ?? now)) * 1_000)),
-                completedBatches: completedBatches)
+                completedBatches: completedBatches,
+                droppedMilliseconds: droppedBytes * 1_000 / AudioFrameBuffer.bytesPerSecond)
         }
     }
 

@@ -54,8 +54,8 @@ struct InterpreterView: View {
                             Divider()
                         }
                         if !session.captions.translation.isEmpty {
-                            Text(session.captions.translation)
-                                .font(.title).fontWeight(.semibold)
+                            Text(separatedLines(session.captions.translation))
+                                .font(.title3).fontWeight(.semibold)
                                 .lineSpacing(6)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else if session.captions.source.isEmpty {
@@ -136,5 +136,41 @@ struct InterpreterView: View {
         case .ending: return "录音已停止 · 播放剩余译文"
         case .failed: return "会话已停止"
         }
+    }
+}
+
+/// 译文里中英混排时（如 "bank?沿着…"），在文字系切换处换行，避免挤在一行。
+private func separatedLines(_ text: String) -> String {
+    var out = ""
+    out.reserveCapacity(text.count + 8)
+    var prev: ScriptKind?
+    for ch in text {
+        let kind = scriptKind(of: ch)
+        if let k = kind, let p = prev, k != p {
+            while out.hasSuffix(" ") { out.removeLast() }
+            out += "\n"
+        }
+        out.append(ch)
+        if kind != nil { prev = kind }
+    }
+    return out
+}
+
+private enum ScriptKind { case latin, cjk }
+
+/// 数字、空格、标点返回 nil：不触发换行，也不改变上一个有效语系。
+private func scriptKind(of ch: Character) -> ScriptKind? {
+    guard let v = ch.unicodeScalars.first?.value else { return nil }
+    switch v {
+    case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF, // 汉字
+         0x3040...0x309F, 0x30A0...0x30FF,                     // 日文假名
+         0xAC00...0xD7AF,                                     // 韩文
+         0x3000...0x303F,                                     // 中日文标点
+         0xFF00...0xFFEF:                                     // 全角符号
+        return .cjk
+    case 0x41...0x5A, 0x61...0x7A, 0xC0...0x24F:              // 拉丁字母
+        return .latin
+    default:
+        return nil
     }
 }

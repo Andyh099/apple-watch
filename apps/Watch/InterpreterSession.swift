@@ -27,6 +27,7 @@ final class InterpreterSession: ObservableObject {
     private var currentID = UUID()
     private var interruptObserver: NSObjectProtocol?
     private var consumedLaunch = false
+    private var lastDroppedMilliseconds = 0
     #if DEBUG
     private var displayState = "active"
     #endif
@@ -141,6 +142,7 @@ final class InterpreterSession: ObservableObject {
         activity = "正在检查麦克风权限"
         diagnostic("start_requested")
         captions = TranscriptBuffer()
+        lastDroppedMilliseconds = 0
         guard await DuplexAudio.requestPermission() else {
             if currentID == id { fail("没有麦克风权限，请在系统设置中开启。") }
             return
@@ -287,6 +289,12 @@ final class InterpreterSession: ObservableObject {
                 }, onProgress: { [weak self] progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.currentID == id else { return }
+                        let droppedTotal = queue.diagnostics().droppedMilliseconds
+                        let newlyDropped = droppedTotal - self.lastDroppedMilliseconds
+                        self.lastDroppedMilliseconds = droppedTotal
+                        if newlyDropped > 0 {
+                            self.notice = "网络跟不上，跳过 \(String(format: "%.1f", Double(newlyDropped) / 1000.0)) 秒语音；会话继续。"
+                        }
                         if progress.batches == 1, self.phase == .connecting || self.phase == .listening {
                             self.microphoneReceiving = true
                             self.activity = "语音已上传 · 等待译文"
@@ -299,11 +307,9 @@ final class InterpreterSession: ObservableObject {
                 })
             } catch {
                 guard !Task.isCancelled else { return }
-                let isBacklog = (error as? AudioUploadQueue.Failure) == .backlog
                 await MainActor.run { [weak self] in
                     guard let self, self.currentID == id, self.phase.isRunning else { return }
-                    if isBacklog { self.uploadBacklogged(queue.diagnostics()) }
-                    else { self.fail("音频上传失败，已停止录音。") }
+                    self.fail("音频上传失败，已停止录音。")
                 }
             }
         }
@@ -311,11 +317,10 @@ final class InterpreterSession: ObservableObject {
             switch queue.enqueue(bytes) {
             case .accepted, .closed: break
             case .overflow:
-                // Take the snapshot on the capture queue, before a delayed UI
-                // callback can distort the observed send wait or backlog age.
-                let diagnostics = queue.diagnostics()
+                // Transient: the queue already skipped stale audio and stays
+                // live; the drop notice surfaces via upload progress.
                 Task { @MainActor in
-                    if self?.currentID == id { self?.uploadBacklogged(diagnostics) }
+                    if self?.currentID == id { self?.notice = "网络繁忙，正在跳过积压语音…" }
                 }
             case .invalidFrame:
                 Task { @MainActor in
@@ -372,15 +377,6 @@ final class InterpreterSession: ObservableObject {
         displayState = isDimmed ? "dimmed" : (isActive ? "active" : "inactive")
         diagnostic("display_state=\(displayState)")
         #endif
-    }
-
-    private func uploadBacklogged(_ snapshot: AudioUploadQueue.Diagnostics) {
-        var message = "待上传语音积压达到保护上限，已停止录音；请重新开始。（UPLOAD-BACKLOG）"
-        #if DEBUG
-        message += "\n待发 \(snapshot.pendingMilliseconds)ms · 在途 \(snapshot.inFlightMilliseconds)ms\n发送等待 \(snapshot.sendWaitingMilliseconds)ms · 最早 \(snapshot.oldestMilliseconds)ms\n已发 \(snapshot.completedBatches)批 · \(displayState)"
-        diagnostic("upload_backlog pending_ms=\(snapshot.pendingMilliseconds) in_flight_ms=\(snapshot.inFlightMilliseconds) waiting_ms=\(snapshot.sendWaitingMilliseconds) oldest_ms=\(snapshot.oldestMilliseconds) batches=\(snapshot.completedBatches) display=\(displayState)")
-        #endif
-        fail(message)
     }
 
     private func fail(_ message: String) {
