@@ -1,0 +1,12 @@
+{
+  "name": "wrist-interpreter-relay",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "test": "node --test",
+    "check": "node --check src/server.mjs && node --check src/relay.mjs && node --check src/protocol.mjs"
+  },
+  "dependencies": { "ws": "^8.18.3" }
+}
