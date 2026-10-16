@@ -36,5 +36,14 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>在翻译会话中持续收音，将声音经你配置的服务发送至 OpenAI，用于中英双向语音翻译。</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wristinterpreter</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

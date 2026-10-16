@@ -101,6 +101,15 @@ struct InterpreterView: View {
                 Task { await session.start() }
             }
         }
+        .onOpenURL { url in
+            // 表盘小组件点按：和 Siri 意图走同一条自启路径。
+            guard url.scheme == "wristinterpreter" else { return }
+            pendingSiriStart = true
+            if scenePhase == .active {
+                pendingSiriStart = false
+                Task { await session.start() }
+            }
+        }
         .task {
             session.displayChanged(isActive: scenePhase == .active, isDimmed: isLuminanceReduced)
             if scenePhase == .active { await session.startFromLaunchIfNeeded() }

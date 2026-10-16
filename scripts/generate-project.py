@@ -31,7 +31,9 @@ core = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/Interpret
 shared = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "apps/Shared").glob("*.swift"))
 watch = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "apps/Watch").glob("*.swift"))
 phone = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "apps/iPhone").glob("*.swift"))
-refs = {p: file_ref(p, "sourcecode.swift") for p in core + shared + watch + phone}
+widget = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "apps/Widget").glob("*.swift"))
+refs = {p: file_ref(p, "sourcecode.swift") for p in core + shared + watch + phone + widget}
+refs["apps/Widget/Info.plist"] = file_ref("apps/Widget/Info.plist", "text.plist.xml")
 resources = {"iOS": [], "watchOS": []}
 for platform, directory in [("iOS", "iPhone"), ("watchOS", "Watch")]:
     path = f"apps/{directory}/Info.plist"
@@ -41,6 +43,7 @@ for platform, directory in [("iOS", "iPhone"), ("watchOS", "Watch")]:
 products = {}
 for name in ["WristInterpreter", "WristInterpreterWatch"]:
     products[name] = add("product:" + name, "PBXFileReference", explicitFileType="wrapper.application", includeInIndex=0, path=name + ".app", sourceTree="BUILT_PRODUCTS_DIR")
+products["WristInterpreterWidget"] = add("product:WristInterpreterWidget", "PBXFileReference", explicitFileType="wrapper.app-extension", includeInIndex=0, path="WristInterpreterWidget.appex", sourceTree="BUILT_PRODUCTS_DIR")
 product_group = add("products", "PBXGroup", children=list(products.values()), name="Products", sourceTree="<group>")
 main_group = add("main", "PBXGroup", children=list(refs.values()) + [product_group], sourceTree="<group>")
 
@@ -94,6 +97,41 @@ for name, platform, paths in [("WristInterpreter", "iOS", phone + shared + core)
         configs.append(add(name + ":" + config, "XCBuildConfiguration", name=config, buildSettings=settings))
     config_list = add(name + ":configs", "XCConfigurationList", buildConfigurations=configs, defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
     target_ids.append(add("target:" + name, "PBXNativeTarget", buildConfigurationList=config_list, buildPhases=phases, buildRules=[], dependencies=[] if is_watch else [dependency], name=name, productName=name, productReference=products[name], productType="com.apple.product-type.application"))
+
+# Widget extension target (watchOS), embedded in the Watch app's PlugIns.
+widget_name = "WristInterpreterWidget"
+widget_build_files = [add(widget_name + ":build:" + p, "PBXBuildFile", fileRef=refs[p]) for p in widget]
+widget_phases = [
+    add(widget_name + ":sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=widget_build_files, runOnlyForDeploymentPostprocessing=0),
+    add(widget_name + ":frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0),
+    add(widget_name + ":resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0),
+]
+widget_configs = []
+for config in ["Debug", "Release"]:
+    widget_configs.append(add(widget_name + ":" + config, "XCBuildConfiguration", name=config, buildSettings={
+        "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "TQWQ7W89M9",
+        "CURRENT_PROJECT_VERSION": "1", "MARKETING_VERSION": "0.1.0",
+        "PRODUCT_NAME": "$(TARGET_NAME)", "GENERATE_INFOPLIST_FILE": "NO",
+        "INFOPLIST_FILE": "apps/Widget/Info.plist",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.wristinterpreter.prototype.watchkitapp.widget",
+        "SDKROOT": "watchos", "SUPPORTED_PLATFORMS": "watchos watchsimulator",
+        "TARGETED_DEVICE_FAMILY": "4", "WATCHOS_DEPLOYMENT_TARGET": "11.0",
+        "SKIP_INSTALL": "YES", "APPLICATION_EXTENSION_API_ONLY": "YES",
+        "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks",
+        "SWIFT_EMIT_LOC_STRINGS": "YES",
+    }))
+widget_config_list = add(widget_name + ":configs", "XCConfigurationList", buildConfigurations=widget_configs, defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
+widget_target = add("target:" + widget_name, "PBXNativeTarget", buildConfigurationList=widget_config_list, buildPhases=widget_phases, buildRules=[], dependencies=[], name=widget_name, productName=widget_name, productReference=products[widget_name], productType="com.apple.product-type.app-extension")
+target_ids.append(widget_target)
+
+# Embed the widget in the Watch app and build it as a dependency.
+widget_proxy = add("widget:proxy", "PBXContainerItemProxy", containerPortal=ident("project"), proxyType=1, remoteGlobalIDString=widget_target, remoteInfo=widget_name)
+widget_dependency = add("widget:dependency", "PBXTargetDependency", target=widget_target, targetProxy=widget_proxy)
+widget_embed_file = add("widget:embed-file", "PBXBuildFile", fileRef=products[widget_name], settings={"ATTRIBUTES": ["CodeSignOnCopy", "RemoveHeadersOnCopy"]})
+widget_embed_phase = add("widget:embed-phase", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="$(CONTENTS_FOLDER_PATH)/PlugIns", dstSubfolderSpec=13, files=[widget_embed_file], name="Embed App Extensions", runOnlyForDeploymentPostprocessing=0)
+watch_target_obj = objects[ident("target:WristInterpreterWatch")]
+watch_target_obj["buildPhases"].append(widget_embed_phase)
+watch_target_obj["dependencies"].append(widget_dependency)
 
 project_id = add("project", "PBXProject", attributes={"LastUpgradeCheck": "2600", "BuildIndependentTargetsInParallel": "YES", "TargetAttributes": {i: {"CreatedOnToolsVersion": "26.0"} for i in target_ids}}, buildConfigurationList=project_config_list, compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans", hasScannedForEncodings=0, knownRegions=["zh-Hans", "en", "Base"], mainGroup=main_group, productRefGroup=product_group, projectDirPath="", projectRoot="", targets=target_ids)
 project_dir = ROOT / "WristInterpreter.xcodeproj"
