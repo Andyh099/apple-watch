@@ -6,13 +6,13 @@ public enum ConnectionFailure {
         if let status = httpStatus {
             switch status {
             case 401, 403:
-                return "连接授权被拒绝，请在 iPhone 检查开发设备令牌并重新同步（HTTP \(status)）。"
+                return "连接授权被拒绝，请在 iPhone 检查 OpenAI API Key 并重新同步（HTTP \(status)）。"
             case 404:
-                return "翻译服务地址不存在，请检查临时通道地址及 /interpret 路径（HTTP 404）。"
+                return "翻译服务地址异常，请重试（HTTP 404）。"
             case 429:
-                return "服务当前繁忙或已有会话，请结束其他会话后重试（HTTP 429）。"
+                return "服务当前繁忙或达到限额，请稍后重试（HTTP 429）。"
             case 500...599:
-                return "翻译后端或临时通道暂不可用，请检查 Mac 服务（HTTP \(status)）。"
+                return "翻译服务暂不可用（HTTP \(status)）。"
             default:
                 break
             }

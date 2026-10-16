@@ -9,14 +9,15 @@ Siri / 手表应用入口
   → 前台 Watch 会话：授权 + 麦克风权限
   → AVAudioEngine：输入转换为 24 kHz / mono / PCM16 LE
   → 每 100 ms 一帧（静音也发送）
-  → WSS /interpret：开发设备令牌
-  → Node 中继：服务端 OpenAI Key，固定翻译指令
-  → GPT-Live /v1/live/sessions
-  → 输出 PCM + 原声/译文文本增量
-  → Node → Watch：流式播放 + 有界滚动字幕
+  → WSS wss://api.openai.com/v1/live/sessions：手表直连，走手表 Wi-Fi 或蜂窝
+  → GPT-Live /v1/live/sessions：Authorization 即 API Key，固定翻译指令
+  → 输出 PCM (base64) + 原声/译文文本增量
+  → Watch：流式播放 + 有界滚动字幕
 
-iPhone → Keychain + WatchConnectivity → 手表服务配置
+iPhone → Keychain + WatchConnectivity → 手表 API Key
 ```
+
+手机不是音频中转站，不提供录音/翻译页面。2026-10-15 起默认直连：不再需要 Mac 中继与临时公网通道；`server/` 保留为旧实现。代价是 API Key 落在手表钥匙串——建议在 OpenAI 后台设置用量上限。
 
 手机不是音频中转站，不提供录音/翻译页面。已配置的手表由自己的网络栈访问中继；实际网络可达性与音频路线待真机确认。
 
@@ -31,9 +32,9 @@ iPhone → Keychain + WatchConnectivity → 手表服务配置
 
 **没有实现**专用翻译模型的语言路由和多方向会话。不能简单把同一条混合麦克风音频发送到两个翻译会话再叠加播放，那不能证明正确归属与去重。若 GPT-Live 实测不能稳定纯翻译，这条适配器应被替换或重新设计，不把指令遵循当成保证。
 
-## 会话协议
+## 会话协议（手表直连，2026-10-15 起）
 
-中继向模型：
+手表向 OpenAI：
 
 1. WebSocket 打开后发送 `session.start`；固定模型、音频格式、声音和翻译指令，`delegation.type = client`、`store = false`。
 2. 等待 `session.started`，然后通知手表 `ready`；尚未 ready 不允许音频上行。

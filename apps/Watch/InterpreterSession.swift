@@ -20,6 +20,7 @@ final class InterpreterSession: ObservableObject {
     private var receiver: Task<Void, Never>?
     private var sender: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
+    private var sessionTimer: Task<Void, Never>?
     private var uploadQueue: AudioUploadQueue?
     private var currentID = UUID()
     private var interruptObserver: NSObjectProtocol?
@@ -64,13 +65,13 @@ final class InterpreterSession: ObservableObject {
     }
 
     #if DEBUG
-    /// Checks the configured relay without credentials, recording, or a provider session.
-    /// An expected HTTP 401 proves transport reachability, NOT device-token validity.
+    /// Checks reachability of OpenAI's Live API without credentials, recording,
+    /// or a provider session. An expected HTTP 401 proves transport reachability,
+    /// NOT API key validity.
     private func checkNetworkWithoutRecording() async {
         guard !phase.isRunning,
               UserDefaults.standard.bool(forKey: "cloudAudioConsent"),
-              let url = ConfigurationStore.shared.configuration?.validatedURL,
-              var health = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+              ConfigurationStore.shared.configuration?.validatedAPIKey != nil else {
             notice = "网络检查未运行：请先完成配置与云处理同意。"
             print("NETWORK_DIAGNOSTIC skipped_missing_configuration_or_consent")
             return
@@ -88,35 +89,10 @@ final class InterpreterSession: ObservableObject {
             session.invalidateAndCancel()
             if currentID == id { reset(); phase = .idle }
         }
-        health.scheme = "https"
-        health.path = "/health"
-        guard let healthURL = health.url else { return }
-        do {
-            let (_, response) = try await session.data(from: healthURL)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            print("NETWORK_DIAGNOSTIC https_status=\(status)")
-            guard currentID == id else { return }
-            notice = "HTTPS 检查 HTTP \(status)；正在检查语音连接。"
-        } catch {
-            guard currentID == id else { return }
-            print("NETWORK_DIAGNOSTIC https_error=\((error as NSError).code)")
-            notice = "HTTPS 检查失败（错误码 \((error as NSError).code)）；正在检查语音连接。"
-        }
-        guard currentID == id else { return }
-        do {
-            try await audio.prepareForConnection(sessionID: id)
-        } catch {
-            guard currentID == id else { return }
-            notice = "网络检查：音频激活失败（错误码 \((error as NSError).code)）。未录音。"
-            print("NETWORK_DIAGNOSTIC audio_activation_error=\((error as NSError).code)")
-            return
-        }
-        guard currentID == id else { return }
-        print("NETWORK_DIAGNOSTIC audio_activation=success capture=off")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: SessionConfiguration.upstreamURL)
         request.networkServiceType = .avStreaming
         request.timeoutInterval = 10
-        // Intentionally omit Authorization. The relay must reject before opening upstream.
+        // Intentionally omit Authorization. OpenAI must reject before opening a session.
         let probe = session.webSocketTask(with: request)
         self.socket = probe
         probe.maximumMessageSize = 4096
@@ -135,8 +111,8 @@ final class InterpreterSession: ObservableObject {
             guard currentID == id else { return }
             let status = (probe.response as? HTTPURLResponse)?.statusCode ?? 0
             print("NETWORK_DIAGNOSTIC websocket_status=\(status) error=\((error as NSError).code)")
-            if status == 401 {
-                notice = "语音连接已到达服务（预期 HTTP 401）。未录音、未调用模型；请点开始翻译实测。"
+            if status == 401 || status == 403 {
+                notice = "已到达 OpenAI 服务（预期 HTTP \(status)）。未录音、未调用模型；请点开始翻译实测。"
             } else {
                 notice = "语音连接检查失败（HTTP \(status)，错误码 \((error as NSError).code)）。未录音。"
             }
@@ -150,8 +126,8 @@ final class InterpreterSession: ObservableObject {
             notice = "请先同意云端语音处理。"
             return
         }
-        guard let configuration = ConfigurationStore.shared.configuration, let url = configuration.validatedURL else {
-            notice = "请先在 iPhone 配置翻译服务并同步到手表。"
+        guard let apiKey = ConfigurationStore.shared.configuration?.validatedAPIKey else {
+            notice = "请先在 iPhone 配置 OpenAI API Key 并同步到手表。"
             return
         }
         let id = UUID()
@@ -182,8 +158,8 @@ final class InterpreterSession: ObservableObject {
         guard currentID == id, phase == .connecting else { return }
         activity = "等待翻译服务就绪 · 尚未录音"
         diagnostic("audio_activated_waiting_provider")
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(configuration.token)", forHTTPHeaderField: "Authorization")
+        var request = URLRequest(url: SessionConfiguration.upstreamURL)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.networkServiceType = .avStreaming
         request.timeoutInterval = 20
         let config = URLSessionConfiguration.ephemeral
@@ -191,9 +167,22 @@ final class InterpreterSession: ObservableObject {
         let session = URLSession(configuration: config)
         urlSession = session
         let socket = session.webSocketTask(with: request)
-        socket.maximumMessageSize = 256_000
+        socket.maximumMessageSize = 1_048_576
         self.socket = socket
         socket.resume()
+        // The task buffers this until the handshake completes; a 401 here means
+        // a bad key and surfaces through the receiver below.
+        guard let startData = try? JSONEncoder().encode(LiveSessionStart()),
+              let startText = String(data: startData, encoding: .utf8) else {
+            if currentID == id { fail("无法构造会话请求。") }
+            return
+        }
+        do { try await socket.send(.string(startText)) } catch {
+            guard currentID == id, phase.isRunning else { return }
+            let httpStatus = (socket.response as? HTTPURLResponse)?.statusCode
+            self.fail(ConnectionFailure.message(for: error, httpStatus: httpStatus))
+            return
+        }
         receiver = Task { [weak self] in
             do {
                 while !Task.isCancelled {
@@ -216,22 +205,23 @@ final class InterpreterSession: ObservableObject {
 
     private func receive(_ message: URLSessionWebSocketTask.Message, id: UUID) async throws {
         switch message {
-        case .data(let bytes):
-            if phase == .listening || phase == .ending {
-                if phase == .listening { activity = "已收到译音 · 正在播放并继续收音" }
-                audio.play(bytes)
-            }
+        case .data:
+            // Direct Live sessions are JSON-only; ignore binary defensively.
+            break
         case .string(let text):
-            let event = try JSONDecoder().decode(ServerEvent.self, from: Data(text.utf8))
+            let event = try JSONDecoder().decode(LiveEvent.self, from: Data(text.utf8))
             switch event.type {
-            case "ready":
-                guard phase == .connecting, event.sampleRate == 24_000, event.channels == 1, event.format == "pcm16" else {
-                    fail("服务端音频配置不兼容。")
-                    return
-                }
+            case "session.started":
+                guard phase == .connecting else { return }
                 timeout?.cancel()
                 activity = "服务已就绪，正在启动麦克风"
                 diagnostic("provider_ready")
+                sessionTimer = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(InterpreterInstructions.maxSessionSeconds))
+                    guard !Task.isCancelled, let self, self.currentID == id, self.phase.isRunning else { return }
+                    self.notice = "单次会话时限已到，正在结束。"
+                    self.end()
+                }
                 do { try await startAudio(id: id) }
                 catch {
                     if currentID == id {
@@ -239,15 +229,24 @@ final class InterpreterSession: ObservableObject {
                         else { fail("无法启动双向录放音（错误码 \((error as NSError).code)）。") }
                     }
                 }
-            case "caption":
-                if let channel = event.channel.flatMap(TranscriptChannel.init(rawValue:)), let delta = event.delta {
-                    captions.append(delta, to: channel, eventID: event.eventID)
-                }
-            case "notice": notice = event.message
+            case "session.output_audio.delta":
+                guard phase == .listening || phase == .ending,
+                      let base64 = event.delta,
+                      let pcm = Data(base64Encoded: base64), !pcm.isEmpty else { return }
+                if phase == .listening { activity = "已收到译音 · 正在播放并继续收音" }
+                audio.play(pcm)
+            case "session.input_transcript.delta":
+                if let delta = event.delta { captions.append(delta, to: .source, eventID: event.event_id) }
+            case "session.output_transcript.delta":
+                if let delta = event.delta { captions.append(delta, to: .translation, eventID: event.event_id) }
+            case "session.delegation.created":
+                // No tools exist. Fail closed rather than let an interpreter turn into an assistant.
+                diagnostic("provider_or_relay_error")
+                fail("模型偏离了纯翻译模式，已停止会话。")
             case "error":
                 diagnostic("provider_or_relay_error")
-                fail(event.message ?? "翻译服务发生错误。")
-            case "closed":
+                fail(event.error?.message ?? "翻译服务发生错误。")
+            case "session.closed":
                 phase = .ending
                 microphoneReceiving = false
                 activity = "服务已结束，正在播放剩余译音"
@@ -273,9 +272,15 @@ final class InterpreterSession: ObservableObject {
         sender = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 try await AudioUploadSender.run(queue: queue, sendAudio: { bytes in
-                    try await socket.send(.data(bytes))
+                    let payload = ["type": "session.input_audio.append",
+                                   "audio": bytes.base64EncodedString()] as [String: String]
+                    let data = try JSONSerialization.data(withJSONObject: payload)
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        throw URLError(.cannotEncodeContentData)
+                    }
+                    try await socket.send(.string(text))
                 }, finishInput: {
-                    try await socket.send(.string("{\"type\":\"stop\"}"))
+                    try await socket.send(.string(#"{"type":"session.close"}"#))
                 }, onProgress: { [weak self] progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.currentID == id else { return }
@@ -393,6 +398,7 @@ final class InterpreterSession: ObservableObject {
         activity = nil
         currentID = UUID()
         timeout?.cancel()
+        sessionTimer?.cancel()
         uploadQueue?.cancel()
         uploadQueue = nil
         sender?.cancel()
@@ -404,14 +410,33 @@ final class InterpreterSession: ObservableObject {
         audio.stop()
     }
 
-    private struct ServerEvent: Decodable {
+    private struct LiveEvent: Decodable {
         let type: String
-        var channel: String?
+        var event_id: String?
+        /// Base64 PCM for output_audio deltas, transcript text for transcript deltas.
         var delta: String?
-        var eventID: String?
-        var message: String?
-        var sampleRate: Int?
-        var channels: Int?
-        var format: String?
+        var error: LiveError?
+        struct LiveError: Decodable { var message: String? }
+    }
+
+    /// Sent once per connection, right after the WebSocket handshake.
+    private struct LiveSessionStart: Encodable {
+        let type = "session.start"
+        let event_id = "start_interpreter"
+        struct Session: Encodable {
+            let model = InterpreterInstructions.model
+            let instructions = InterpreterInstructions.prompt
+            struct Audio: Encodable {
+                struct Format: Encodable { let type = "audio/pcm"; let rate = 24_000 }
+                struct Output: Encodable { let voice = InterpreterInstructions.voice }
+                let format = Format()
+                let output = Output()
+            }
+            struct Delegation: Encodable { let type = "client" }
+            let audio = Audio()
+            let delegation = Delegation()
+            let store = false
+        }
+        let session = Session()
     }
 }

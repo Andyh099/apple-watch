@@ -44,25 +44,25 @@ final class InterpreterCoreTests: XCTestCase {
         XCTAssertEqual(captions.source, "ello")
     }
 
-    func testRejectsInsecureOrCredentialBearingEndpoints() {
-        for endpoint in ["ws://localhost/interpret", "https://example.com/interpret", "wss://u:p@example.com/interpret", "wss://example.com/interpret?token=x", "wss://example.com/other", "wss://example.com/interpret#x"] {
-            XCTAssertNil(SessionConfiguration(endpoint: endpoint, token: "test").validatedURL)
+    func testAPIKeyValidation() {
+        for key in ["", "short", "has space inside this key abcdef", "bad\nkey abcdefghijklmnop", "bad\tkey abcdefghijklmnop", "bad\u{7f}key abcdefghijklmnop"] {
+            XCTAssertNil(SessionConfiguration(apiKey: key).validatedAPIKey, "key: \(key)")
         }
-        XCTAssertNotNil(SessionConfiguration(endpoint: "wss://example.com/interpret", token: "test").validatedURL)
-        for token in ["bad\nheader", "bad\u{0}header", "bad\theader", "bad\u{7f}header"] {
-            XCTAssertNil(SessionConfiguration(endpoint: "wss://example.com/interpret", token: token).validatedURL)
-        }
+        XCTAssertNotNil(SessionConfiguration(apiKey: "sk-test-0123456789abcdef0123456789").validatedAPIKey)
+        // Leading/trailing whitespace is trimmed, not rejected.
+        XCTAssertEqual(SessionConfiguration(apiKey: "  sk-test-0123456789abcdef0123456789  ").validatedAPIKey,
+                       "sk-test-0123456789abcdef0123456789")
     }
     func testConnectionFailuresDistinguishAuthorizationAndNetwork() {
         let error = URLError(.badServerResponse)
         for status in [401, 403] {
             let message = ConnectionFailure.message(for: error, httpStatus: status)
-            XCTAssertTrue(message.contains("设备令牌"))
+            XCTAssertTrue(message.contains("API Key"))
             XCTAssertTrue(message.contains("HTTP \(status)"))
         }
-        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 404).contains("/interpret"))
-        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 429).contains("已有会话"))
-        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 502).contains("Mac"))
+        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 404).contains("404"))
+        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 429).contains("429"))
+        XCTAssertTrue(ConnectionFailure.message(for: error, httpStatus: 502).contains("502"))
         XCTAssertTrue(ConnectionFailure.message(for: URLError(.notConnectedToInternet)).contains("-1009"))
         XCTAssertTrue(ConnectionFailure.message(for: URLError(.cannotFindHost)).contains("解析"))
         XCTAssertTrue(ConnectionFailure.message(for: URLError(.serverCertificateUntrusted)).contains("不会跳过"))

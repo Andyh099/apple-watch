@@ -32,10 +32,10 @@ struct InterpreterView: View {
                             .font(.body).foregroundStyle(.secondary)
                     }
                 } else if !consent {
-                    Text("声音将经你配置的服务发送至 OpenAI 处理。本原型不主动保存录音或字幕。请先告知对话参与者。")
+                    Text("声音将直接发送至 OpenAI 处理。本原型不主动保存录音或字幕。请先告知对话参与者。")
                         .font(.footnote)
-                    if let endpoint = configuration.configuration?.endpoint {
-                        Text(endpoint).font(.caption2).foregroundStyle(.secondary)
+                    if configuration.configuration != nil {
+                        Text("已配置 OpenAI 直连").font(.caption2).foregroundStyle(.secondary)
                     }
                     Button("同意并开始") {
                         consent = true

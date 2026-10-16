@@ -52,36 +52,15 @@ bash scripts/test-core.sh
 - 实体 Apple Watch（Watch8,1 / watchOS 27.0.1）已连接且开发者模式已开启；独立重新签名构建及严格深度签名验证通过，描述文件包含该手表。首次安装、启动及进程检查通过。后续用户截图显示已同意云处理，但连接失败；2026-09-27 第二轮补丁使用异步音频激活、声明音频流能力，并通过手表无录音检查确认 HTTPS 200 / WebSocket 401（有意省略设备令牌）。配对配置内容及实际音频仍待验收。详情见 [原生验证记录](docs/verification.md)。
 - **代理的构建和连接诊断未主动调用真实语音模型或录音；诊断只做健康请求及无凭证握手（服务器在连接模型前拒绝）。401 仅证明网络可达，不证明设备令牌有效、模型权限或翻译成功。**
 
-## 4. 配置开发后端
+## 4. 配置直连（不再经过 Mac 中转）
 
-```sh
-cd "/Users/andy/Desktop/apple watch/server"
-cp .env.example .env
-node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))'
-```
+手表直连 OpenAI Live API，走手表自己的 Wi-Fi 或蜂窝网络。
 
-把生成的随机值填入 `.env` 的 `DEVICE_TOKEN`，在本机编辑器中填入自己的 `OPENAI_API_KEY`。**不要将服务商 Key 发在聊天里、填入手机或提交版本库。** `.env` 已被忽略；如果已有 `.env`，不要用上面的复制命令覆盖它。
+1. 在 iPhone 上打开腕译，把 OpenAI API Key 粘贴进输入框，点"保存并同步到手表"。Key 只存于手机和手表的钥匙串，经系统加密通道同步，不会显示或记录。
+2. 先在 OpenAI 后台给这个 Key 设置用量上限——Key 随设备丢失可能被刷额度。
+3. 手表端收到 `session.started` 后才开始采集；单次会话 300 秒，超时自动结束。
 
-```dotenv
-OPENAI_API_KEY=仅填在服务端
-DEVICE_TOKEN=上一步生成的随机值
-HOST=127.0.0.1
-PORT=8787
-LIVE_MODEL=gpt-live-1
-SESSION_MAX_SECONDS=300
-MAX_SESSIONS=1
-```
-
-```sh
-npm start
-```
-
-- 服务默认只监听本机 `127.0.0.1:8787`。
-- 手机填入的地址必须是 **`wss://你控制的域名/interpret`**。需要配置持有可信证书、支持 WebSocket Upgrade 的 TLS 反向代理，转发至本机服务。2026-09-27 经用户同意，已建立一个 Cloudflare 临时开发通道；公网健康检查、未授权/错误令牌拒绝检查通过，不代表模型或音频链路已验证。当前临时地址与设备令牌仅写入本机权限为 0600 的 `.build/腕译-手机连接配置.txt`，不是正式部署；通道重建后需确认新地址。
-- 不要把手机地址填成 `localhost`，不要关闭 TLS 证书校验，不要直接把明文开发端口暴露公网。
-- `/health` 只能证明中继进程可用；固定返回 `providerConnectionVerified: false`，不是模型可用性认证。
-- 当前是一个共享开发令牌，不是生产账号权限；限时/并发不是账单硬上限。真实试用前，在服务商控制台另行配置预算与访问限制。
-- 当前不自动降级到其他模型/API；权限或配置失败会终止并提示。
+`server/` 目录保留为旧中继实现（历史参考），当前默认不再使用。
 
 ## 5. 用完整 Xcode 运行
 
