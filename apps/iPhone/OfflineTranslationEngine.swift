@@ -153,7 +153,7 @@ final class OfflineTranslationEngine {
         defer { try? FileManager.default.removeItem(at: file.fileURL) }
         do {
             guard #available(iOS 26, *) else { throw EngineError.needsIOS26 }
-            let (sourceText, sourceLang) = try await recognize(url: file.fileURL, pair: pair)
+            let (sourceText, sourceLang, viaServer) = try await recognize(url: file.fileURL, pair: pair)
             let targetLang = pair.offlineOther(sourceLang)
             let translated = try await translate(
                 sourceText,
@@ -165,6 +165,7 @@ final class OfflineTranslationEngine {
                 "sourceText": sourceText,
                 "translatedText": translated,
                 "targetLang": targetLang.ttsCode,
+                "viaServer": viaServer,
             ])
         } catch {
             reply([
@@ -188,7 +189,8 @@ final class OfflineTranslationEngine {
 
     /// Recognizes with both candidate locales in parallel, then picks the
     /// transcript whose identified language matches its recognizer locale.
-    private func recognize(url: URL, pair: LanguagePair) async throws -> (String, OfflineLanguage) {
+    /// Returns whether any recognition fell back to Apple's servers.
+    private func recognize(url: URL, pair: LanguagePair) async throws -> (String, OfflineLanguage, Bool) {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             throw EngineError.speechNotAuthorized
         }
@@ -206,12 +208,13 @@ final class OfflineTranslationEngine {
         defer { watchdog.cancel() }
         async let textA = recognizeText(url: url, language: langA)
         async let textB = recognizeText(url: url, language: langB)
-        let (a, b) = try await (textA, textB)
+        let ((a, viaA), (b, viaB)) = try await (textA, textB)
         guard !a.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || !b.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw EngineError.emptySpeech
         }
-        return pickBest(a: (a, langA), b: (b, langB))
+        let (text, lang) = pickBest(a: (a, langA), b: (b, langB))
+        return (text, lang, viaA || viaB)
     }
 
     /// Fires pending recognitions with a timeout error and cancels the tasks.
@@ -226,14 +229,41 @@ final class OfflineTranslationEngine {
         activeTasks.removeAll()
     }
 
-    private func recognizeText(url: URL, language: OfflineLanguage) async throws -> String {
+    /// Tries on-device recognition first; if the on-device model isn't
+    /// downloaded yet (the 听写语言 download can lag behind the Settings
+    /// checkmark), falls back to server recognition so the feature works
+    /// now and goes fully offline once the model arrives.
+    /// Returns the transcript and whether the server path was used.
+    private func recognizeText(url: URL, language: OfflineLanguage) async throws -> (String, Bool) {
         guard let recognizer = SFSpeechRecognizer(locale: language.speechLocale),
-              recognizer.supportsOnDeviceRecognition,
               recognizer.isAvailable else {
             throw EngineError.noRecognizer(language)
         }
+        var onDeviceError: Error?
+        if recognizer.supportsOnDeviceRecognition {
+            do {
+                let text = try await recognizeText(url: url, recognizer: recognizer, onDevice: true)
+                return (text, false)
+            } catch {
+                onDeviceError = error
+            }
+        }
+        do {
+            let text = try await recognizeText(url: url, recognizer: recognizer, onDevice: false)
+            return (text, true)
+        } catch {
+            let serverMsg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if let od = onDeviceError {
+                let odMsg = (od as? LocalizedError)?.errorDescription ?? od.localizedDescription
+                throw EngineError.recognitionFailed("端侧失败（\(odMsg)）；在线也失败（\(serverMsg)）")
+            }
+            throw error
+        }
+    }
+
+    private func recognizeText(url: URL, recognizer: SFSpeechRecognizer, onDevice: Bool) async throws -> String {
         let request = SFSpeechURLRecognitionRequest(url: url)
-        request.requiresOnDeviceRecognition = true
+        request.requiresOnDeviceRecognition = onDevice
         let id = UUID()
         return try await withCheckedThrowingContinuation { continuation in
             pendingContinuations[id] = continuation
@@ -244,7 +274,8 @@ final class OfflineTranslationEngine {
                 guard self.pendingContinuations.removeValue(forKey: id) != nil else { return }
                 if let error {
                     self.endTask(task)
-                    continuation.resume(throwing: EngineError.recognitionFailed(error.localizedDescription))
+                    let ns = error as NSError
+                    continuation.resume(throwing: EngineError.recognitionFailed("\(error.localizedDescription)（\(ns.domain) \(ns.code)）"))
                     return
                 }
                 if let result, result.isFinal {

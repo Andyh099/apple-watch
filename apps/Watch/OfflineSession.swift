@@ -168,7 +168,9 @@ final class OfflineSession: NSObject, ObservableObject {
         sourceText = userInfo["sourceText"] as? String ?? ""
         translatedText = translated
         utteranceCount += 1
-        notice = nil
+        // Transparency: the iPhone falls back to server recognition only
+        // when the on-device dictation model isn't downloaded yet.
+        notice = (userInfo["viaServer"] as? Bool == true) ? "在线识别（端侧语言包未就绪）" : nil
         speak(translated, languageCode: userInfo["targetLang"] as? String)
     }
 
