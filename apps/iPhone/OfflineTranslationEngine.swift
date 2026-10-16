@@ -115,46 +115,64 @@ final class OfflineTranslationEngine {
     // MARK: - WatchConnectivity entry point
 
     /// Called from ConfigurationStore's WCSession delegate (iPhone side).
-    nonisolated func receivedFile(_ file: WCSessionFile) {
-        Task { await OfflineTranslationEngine.shared.received(file) }
+    /// Takes ownership SYNCHRONOUSLY: the system may delete the Inbox file
+    /// as soon as the delegate method returns, so we copy it before any
+    /// await. Returns the safe copy URL and metadata, or nil on failure.
+    nonisolated static func takeOwnership(of file: WCSessionFile) -> (URL, [String: Any]?)? {
+        let dst = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rx-\(UUID().uuidString).wav")
+        do {
+            try FileManager.default.copyItem(at: file.fileURL, to: dst)
+            return (dst, file.metadata)
+        } catch {
+            return nil
+        }
     }
 
     /// Ack immediately so the watch can tell "iPhone has the file" apart
     /// from "iPhone is still working on it", then process in order.
-    private func received(_ file: WCSessionFile) async {
+    /// The URL is our own tmp copy (see takeOwnership).
+    func received(_ url: URL, metadata: [String: Any]?) async {
         WCSession.default.transferUserInfo(["received": true])
-        enqueue(file)
+        enqueue((url, metadata))
+    }
+
+    /// The Inbox file vanished before we could copy it.
+    func reportReceiveFailure(metadata: [String: Any]?) async {
+        let requestID = metadata?["requestID"] as? String ?? UUID().uuidString
+        reply(["requestID": requestID,
+               "error": "手机没能收下这句音频（传输后文件丢失），请再说一遍"])
     }
 
     /// Serial queue: utterances are processed in arrival order so the
     /// watch speaks translations back in the order they were spoken.
-    private var queue: [WCSessionFile] = []
+    private var queue: [(url: URL, metadata: [String: Any]?)] = []
     private var processing = false
 
-    private func enqueue(_ file: WCSessionFile) {
-        queue.append(file)
+    private func enqueue(_ item: (url: URL, metadata: [String: Any]?)) {
+        queue.append(item)
         processNext()
     }
 
     private func processNext() {
         guard !processing, !queue.isEmpty else { return }
         processing = true
-        let file = queue.removeFirst()
+        let item = queue.removeFirst()
         Task {
-            await self.handle(file)
+            await self.handle(item)
             self.processing = false
             self.processNext()
         }
     }
 
-    private func handle(_ file: WCSessionFile) async {
-        let meta = file.metadata ?? [:]
+    private func handle(_ item: (url: URL, metadata: [String: Any]?)) async {
+        let meta = item.metadata ?? [:]
         let requestID = meta["requestID"] as? String ?? UUID().uuidString
         let pair = LanguagePair(rawValue: meta["pair"] as? String ?? "") ?? .chineseEnglish
-        defer { try? FileManager.default.removeItem(at: file.fileURL) }
+        defer { try? FileManager.default.removeItem(at: item.url) }
         do {
             guard #available(iOS 26, *) else { throw EngineError.needsIOS26 }
-            let (sourceText, sourceLang, viaServer) = try await recognize(url: file.fileURL, pair: pair)
+            let (sourceText, sourceLang, viaServer) = try await recognize(url: item.url, pair: pair)
             let targetLang = pair.offlineOther(sourceLang)
             let translated = try await translate(
                 sourceText,
@@ -289,6 +307,9 @@ final class OfflineTranslationEngine {
         guard buffer.frameLength > 0 else {
             throw EngineError.recognitionFailed("音频为空")
         }
+        guard signalPresent(in: buffer) else {
+            throw EngineError.recognitionFailed("音频里没有有效语音信号（可能是静音片段），请靠近手表正常说话")
+        }
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = onDevice
@@ -315,6 +336,27 @@ final class OfflineTranslationEngine {
             request.append(buffer)
             request.endAudio()
         }
+    }
+
+    /// The VAD already gated on energy watch-side, but a truncated transfer
+    /// can still deliver near-silence; catch it here with a clear message
+    /// instead of the recognizer's vague "no speech detected".
+    private func signalPresent(in buffer: AVAudioPCMBuffer) -> Bool {
+        guard let channel = buffer.int16ChannelData else { return true }
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return false }
+        var sum: Double = 0
+        var n = 0
+        var i = 0
+        let ptr = channel[0]
+        while i < count {
+            let s = Double(ptr[i])
+            sum += s * s
+            n += 1
+            i += 16 // sparse sampling is plenty for an energy gate
+        }
+        guard n > 0 else { return false }
+        return (sum / Double(n)).squareRoot() > 120
     }
 
     private func endTask(_ task: SFSpeechRecognitionTask?) {
