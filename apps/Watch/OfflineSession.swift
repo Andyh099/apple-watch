@@ -27,6 +27,10 @@ final class OfflineSession: NSObject, ObservableObject {
     @Published var translatedText = ""
     @Published var notice: String?
     @Published private(set) var utteranceCount = 0
+    /// Utterances cut by VAD and handed to WCSession. Diagnostic: if this
+    /// stays 0 while talking, VAD isn't segmenting; if it grows while
+    /// utteranceCount doesn't, the iPhone side is stuck.
+    @Published private(set) var sentCount = 0
 
     var isRunning: Bool { phase == .listening }
 
@@ -51,6 +55,7 @@ final class OfflineSession: NSObject, ObservableObject {
         sourceText = ""
         translatedText = ""
         utteranceCount = 0
+        sentCount = 0
         Task {
             guard await DuplexAudio.requestPermission() else {
                 self.phase = .failed("没有麦克风权限，请在系统设置中开启。")
@@ -133,6 +138,8 @@ final class OfflineSession: NSObject, ObservableObject {
             "requestID": requestID,
             "pair": ConfigurationStore.shared.languagePair.rawValue,
         ])
+        sentCount += 1
+        notice = "已发送 \(sentCount) 句，等待手机识别…"
     }
 
     // MARK: - iPhone reply (via ConfigurationStore's WCSession delegate)

@@ -107,8 +107,8 @@ struct InterpreterView: View {
                 }
             }
             .padding(.horizontal, 4)
-            if offline.utteranceCount > 0 {
-                Text("已翻译 \(offline.utteranceCount) 句").font(.caption2).foregroundStyle(.secondary)
+            if offline.sentCount > 0 || offline.utteranceCount > 0 {
+                Text("已发送 \(offline.sentCount) 句 · 已翻译 \(offline.utteranceCount) 句").font(.caption2).foregroundStyle(.secondary)
             }
             if let notice = offline.notice {
                 Text(notice).font(.caption2).foregroundStyle(.orange)

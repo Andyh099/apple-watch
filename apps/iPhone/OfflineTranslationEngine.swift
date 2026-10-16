@@ -174,6 +174,10 @@ final class OfflineTranslationEngine {
     // MARK: - On-device speech recognition
 
     private var activeTasks: [SFSpeechRecognitionTask] = []
+    /// Continuations waiting on recognition callbacks. The result handler
+    /// can go silent (wedged on-device model); the watchdog resumes these
+    /// directly so the serial queue can never stall without an error.
+    private var pendingContinuations: [UUID: CheckedContinuation<String, Error>] = [:]
 
     /// Recognizes with both candidate locales in parallel, then picks the
     /// transcript whose identified language matches its recognizer locale.
@@ -182,6 +186,17 @@ final class OfflineTranslationEngine {
             throw EngineError.speechNotAuthorized
         }
         let (langA, langB) = pair.offlineLanguages
+        // Watchdog: if neither recognizer answers within 25 s, fail loudly
+        // instead of wedging the queue — otherwise the watch shows nothing.
+        let watchdog = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 25_000_000_000)
+            } catch {
+                return // recognition finished in time; watchdog cancelled
+            }
+            await self?.timeoutRecognition()
+        }
+        defer { watchdog.cancel() }
         async let textA = recognizeText(url: url, language: langA)
         async let textB = recognizeText(url: url, language: langB)
         let (a, b) = try await (textA, textB)
@@ -192,27 +207,41 @@ final class OfflineTranslationEngine {
         return pickBest(a: (a, langA), b: (b, langB))
     }
 
+    /// Fires pending recognitions with a timeout error and cancels the tasks.
+    private func timeoutRecognition() {
+        let pending = pendingContinuations
+        pendingContinuations.removeAll()
+        let error = EngineError.recognitionFailed("识别超时（25秒）。请检查：设置 → 通用 → 键盘 → 听写语言 是否已下载对应语言")
+        for (_, continuation) in pending {
+            continuation.resume(throwing: error)
+        }
+        for task in activeTasks { task.cancel() }
+        activeTasks.removeAll()
+    }
+
     private func recognizeText(url: URL, language: OfflineLanguage) async throws -> String {
-        guard let recognizer = SFSpeechRecognizer(locale: language.speechLocale) else {
+        guard let recognizer = SFSpeechRecognizer(locale: language.speechLocale),
+              recognizer.supportsOnDeviceRecognition,
+              recognizer.isAvailable else {
             throw EngineError.noRecognizer(language)
         }
-        guard recognizer.isAvailable else { throw EngineError.noRecognizer(language) }
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.requiresOnDeviceRecognition = true
+        let id = UUID()
         return try await withCheckedThrowingContinuation { continuation in
-            var finished = false
+            pendingContinuations[id] = continuation
             var task: SFSpeechRecognitionTask?
             task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                guard !finished else { return }
+                guard let self else { return }
+                // Already resumed (e.g. by the watchdog): ignore late callbacks.
+                guard self.pendingContinuations.removeValue(forKey: id) != nil else { return }
                 if let error {
-                    finished = true
-                    self?.endTask(task)
+                    self.endTask(task)
                     continuation.resume(throwing: EngineError.recognitionFailed(error.localizedDescription))
                     return
                 }
                 if let result, result.isFinal {
-                    finished = true
-                    self?.endTask(task)
+                    self.endTask(task)
                     continuation.resume(returning: result.bestTranscription.formattedString)
                 }
             }
