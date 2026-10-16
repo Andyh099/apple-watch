@@ -276,7 +276,7 @@ final class InterpreterSession: ObservableObject {
                                    "audio": bytes.base64EncodedString()] as [String: String]
                     let data = try JSONSerialization.data(withJSONObject: payload)
                     guard let text = String(data: data, encoding: .utf8) else {
-                        throw URLError(.cannotEncodeContentData)
+                        throw URLError(.cannotParseResponse)
                     }
                     try await socket.send(.string(text))
                 }, finishInput: {
