@@ -168,13 +168,13 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
         // soon as this method returns; everything downstream uses our copy.
         guard let (url, metadata) = OfflineTranslationEngine.takeOwnership(of: file) else {
             Task { @MainActor in
-                OfflineTranslationEngine.shared.reportReceiveFailure(metadata: file.metadata)
+                await OfflineTranslationEngine.shared.reportReceiveFailure(metadata: file.metadata)
             }
             return
         }
         // Delegate callbacks are nonisolated; hop to the main actor.
         Task { @MainActor in
-            OfflineTranslationEngine.shared.received(url, metadata: metadata)
+            await OfflineTranslationEngine.shared.received(url, metadata: metadata)
         }
         #endif
     }
