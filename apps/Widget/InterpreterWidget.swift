@@ -32,12 +32,11 @@ struct InterpreterWidgetView: View {
                 Text("开始翻译")
             }
         default:
+            // 圆形表盘位置很小：只放一个大图标，之前图标+文字两行挤在一起太丑。
             ZStack {
                 AccessoryWidgetBackground()
-                VStack(spacing: 1) {
-                    Image(systemName: "translate").font(.title3)
-                    Text("翻译").font(.caption2)
-                }
+                Image(systemName: "translate")
+                    .font(.system(size: 30, weight: .semibold))
             }
         }
     }
