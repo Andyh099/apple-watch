@@ -1,6 +1,7 @@
 import Foundation
 import WatchConnectivity
 import Speech
+import AVFoundation
 import NaturalLanguage
 import Translation
 
@@ -262,7 +263,34 @@ final class OfflineTranslationEngine {
     }
 
     private func recognizeText(url: URL, recognizer: SFSpeechRecognizer, onDevice: Bool) async throws -> String {
-        let request = SFSpeechURLRecognitionRequest(url: url)
+        // Read the file ourselves with AVAudioFile: a corrupt file now
+        // throws a real, specific error instead of surfacing as
+        // AVErrorUnknown (-11800) from inside the Speech framework. Then
+        // stream PCM buffers — this avoids any file-handling quirks of
+        // SFSpeechURLRecognitionRequest entirely.
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(forReading: url)
+        } catch {
+            let ns = error as NSError
+            throw EngineError.recognitionFailed("音频文件无法解析（\(ns.domain) \(ns.code)：\(error.localizedDescription)）")
+        }
+        let length = audioFile.length
+        guard length > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.fileFormat,
+                                            frameCapacity: AVAudioFrameCount(length)) else {
+            throw EngineError.recognitionFailed("音频为空或无法分配缓冲")
+        }
+        do {
+            try audioFile.read(into: buffer)
+        } catch {
+            throw EngineError.recognitionFailed("音频读取失败：\(error.localizedDescription)")
+        }
+        guard buffer.frameLength > 0 else {
+            throw EngineError.recognitionFailed("音频为空")
+        }
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = onDevice
         let id = UUID()
         return try await withCheckedThrowingContinuation { continuation in
@@ -284,6 +312,8 @@ final class OfflineTranslationEngine {
                 }
             }
             if let task { self.activeTasks.append(task) }
+            request.append(buffer)
+            request.endAudio()
         }
     }
 

@@ -208,15 +208,27 @@ final class OfflineSession: NSObject, ObservableObject {
     // MARK: - WAV writer (24 kHz, 16-bit, mono)
 
     private func wavData(pcm: Data) -> Data {
-        var header = Data()
-        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { header.append(contentsOf: $0) } }
-        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { header.append(contentsOf: $0) } }
-        header.append(contentsOf: "RIFF".utf8); u32(UInt32(36 + pcm.count))
-        header.append(contentsOf: "WAVE".utf8)
-        header.append(contentsOf: "fmt ".utf8); u32(16)
-        u16(1); u16(1); u32(24_000); u32(24_000 * 2); u16(2); u16(16)
-        header.append(contentsOf: "data".utf8); u32(UInt32(pcm.count))
-        return header + pcm
+        // Explicit little-endian byte writes: no clever pointer tricks,
+        // so a corrupt header can never be the silent failure here.
+        var out = Data()
+        func appendU32(_ v: UInt32) {
+            out.append(UInt8(v & 0xFF))
+            out.append(UInt8((v >> 8) & 0xFF))
+            out.append(UInt8((v >> 16) & 0xFF))
+            out.append(UInt8((v >> 24) & 0xFF))
+        }
+        func appendU16(_ v: UInt16) {
+            out.append(UInt8(v & 0xFF))
+            out.append(UInt8((v >> 8) & 0xFF))
+        }
+        func appendString(_ s: String) { out.append(contentsOf: s.utf8) }
+        appendString("RIFF"); appendU32(UInt32(36 + pcm.count))
+        appendString("WAVE")
+        appendString("fmt "); appendU32(16)
+        appendU16(1); appendU16(1); appendU32(24_000); appendU32(48_000); appendU16(2); appendU16(16)
+        appendString("data"); appendU32(UInt32(pcm.count))
+        out.append(pcm)
+        return out
     }
 }
 
