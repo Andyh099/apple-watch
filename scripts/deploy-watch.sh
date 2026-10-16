@@ -40,6 +40,7 @@ xcodebuild -project WristInterpreter.xcodeproj \
 APP=$(find "$DERIVED/Build/Products" -maxdepth 2 -name "WristInterpreterWatch.app" | head -1)
 [ -n "$APP" ] || { echo "没找到构建产物，构建可能失败"; exit 1; }
 codesign --verify --deep --strict "$APP" && echo "签名校验通过"
+[ -d "$APP/PlugIns/WristInterpreterWidget.appex" ] || echo "警告：小组件扩展没打进安装包，表盘上会找不到腕译"
 
 # 3. 安装到手表
 # 从 devicectl 列表里按标识格式（8位-16位）提取设备，名字里有空格也不怕
