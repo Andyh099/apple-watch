@@ -170,7 +170,10 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         #if os(watchOS)
-        OfflineSession.shared.receivedUserInfo(userInfo)
+        // Delegate callbacks are nonisolated; hop to the main actor.
+        Task { @MainActor in
+            OfflineSession.shared.receivedUserInfo(userInfo)
+        }
         #endif
     }
 
