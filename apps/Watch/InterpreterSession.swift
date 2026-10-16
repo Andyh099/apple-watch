@@ -1,6 +1,7 @@
 import AVFAudio
 import Foundation
 import Combine
+import WatchKit
 
 @MainActor
 final class InterpreterSession: ObservableObject {
@@ -21,6 +22,7 @@ final class InterpreterSession: ObservableObject {
     private var sender: Task<Void, Never>?
     private var timeout: Task<Void, Never>?
     private var sessionTimer: Task<Void, Never>?
+    private var runtimeSession: WKExtendedRuntimeSession?
     private var uploadQueue: AudioUploadQueue?
     private var currentID = UUID()
     private var interruptObserver: NSObjectProtocol?
@@ -133,6 +135,7 @@ final class InterpreterSession: ObservableObject {
         let id = UUID()
         currentID = id
         phase = .connecting
+        beginExtendedRuntime() // 会话期间保持前台活跃，防止息屏
         notice = nil
         microphoneReceiving = false
         activity = "正在检查麦克风权限"
@@ -393,12 +396,27 @@ final class InterpreterSession: ObservableObject {
         #endif
     }
 
+    /// Keep the app foreground-active for the whole session so the screen
+    /// does not sleep mid-translation. Ended in reset().
+    private func beginExtendedRuntime() {
+        endExtendedRuntime()
+        let rs = WKExtendedRuntimeSession()
+        runtimeSession = rs
+        rs.start()
+    }
+
+    private func endExtendedRuntime() {
+        runtimeSession?.invalidate()
+        runtimeSession = nil
+    }
+
     private func reset() {
         microphoneReceiving = false
         activity = nil
         currentID = UUID()
         timeout?.cancel()
         sessionTimer?.cancel()
+        endExtendedRuntime()
         uploadQueue?.cancel()
         uploadQueue = nil
         sender?.cancel()

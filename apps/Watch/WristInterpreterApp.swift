@@ -42,18 +42,28 @@ struct InterpreterView: View {
                         Task { await session.start() }
                     }.buttonStyle(.borderedProminent)
                 } else {
-                    // 字幕区：原声小字在上，译文大字在下
-                    if !session.captions.source.isEmpty {
-                        Text(session.captions.source)
-                            .font(.footnote).foregroundStyle(.secondary)
+                    // 字幕区：收听小字在上，译文大字在下，分隔线隔开，一目了然
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !session.captions.source.isEmpty {
+                            Text(session.captions.source)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .lineSpacing(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if !session.captions.source.isEmpty && !session.captions.translation.isEmpty {
+                            Divider()
+                        }
+                        if !session.captions.translation.isEmpty {
+                            Text(session.captions.translation)
+                                .font(.title).fontWeight(.semibold)
+                                .lineSpacing(6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else if session.captions.source.isEmpty {
+                            Text(session.phase == .listening ? "请直接说话…" : "点开始翻译后直接说话")
+                                .font(.body).foregroundStyle(.tertiary)
+                        }
                     }
-                    if !session.captions.translation.isEmpty {
-                        Text(session.captions.translation)
-                            .font(.title2).fontWeight(.medium)
-                    } else if session.captions.source.isEmpty {
-                        Text(session.phase == .listening ? "请直接说话…" : "点开始翻译后直接说话")
-                            .font(.body).foregroundStyle(.tertiary)
-                    }
+                    .padding(.horizontal, 4)
                     if session.phase.isRunning, let activity = session.activity {
                         Text(activity).font(.caption2).foregroundStyle(.secondary)
                             .padding(.top, 4)
