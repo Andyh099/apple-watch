@@ -28,6 +28,7 @@ xcodebuild -project WristInterpreter.xcodeproj \
   -configuration Debug \
   -destination 'generic/platform=watchOS' \
   -derivedDataPath "$DERIVED" \
+  -allowProvisioningUpdates \
   build
 
 APP=$(find "$DERIVED/Build/Products" -maxdepth 2 -name "WristInterpreterWatch.app" | head -1)
@@ -50,6 +51,7 @@ xcodebuild -project WristInterpreter.xcodeproj \
   -configuration Debug \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED" \
+  -allowProvisioningUpdates \
   build
 
 IPHONE_APP=$(find "$DERIVED/Build/Products" -maxdepth 2 -name "WristInterpreter.app" | head -1)
