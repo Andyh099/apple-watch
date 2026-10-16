@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 @main
 struct WristInterpreterWatchApp: App {
@@ -111,6 +112,8 @@ struct InterpreterView: View {
             }
         }
         .task {
+            // 小组件是静态的：每次打开 App 刷新一次，避免改版后表盘上还是旧快照。
+            WidgetCenter.shared.reloadAllTimelines()
             session.displayChanged(isActive: scenePhase == .active, isDimmed: isLuminanceReduced)
             if scenePhase == .active { await session.startFromLaunchIfNeeded() }
         }

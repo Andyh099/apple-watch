@@ -28,6 +28,8 @@ final class InterpreterSession: ObservableObject {
     private var interruptObserver: NSObjectProtocol?
     private var consumedLaunch = false
     private var lastDroppedMilliseconds = 0
+    private var reconnectAttempts = 0
+    private var isReconnecting = false
     #if DEBUG
     private var displayState = "active"
     #endif
@@ -141,7 +143,7 @@ final class InterpreterSession: ObservableObject {
         microphoneReceiving = false
         activity = "正在检查麦克风权限"
         diagnostic("start_requested")
-        captions = TranscriptBuffer()
+        if isReconnecting { isReconnecting = false } else { captions = TranscriptBuffer() }
         lastDroppedMilliseconds = 0
         guard await DuplexAudio.requestPermission() else {
             if currentID == id { fail("没有麦克风权限，请在系统设置中开启。") }
@@ -199,14 +201,18 @@ final class InterpreterSession: ObservableObject {
                 guard let self, self.currentID == id, self.phase.isRunning else { return }
                 let nsError = error as NSError
                 // The system tore the socket down (sleep/suspend, network
-                // change): ECANCELED, never a service failure. Describe what
-                // happened instead of surfacing a raw code like 89.
+                // change): ECANCELED, never a service failure. Reconnect
+                // silently instead of surfacing a raw code like 89.
                 let tornDown = (nsError.domain == NSPOSIXErrorDomain
                                 && nsError.code == POSIXErrorCode.ECANCELED.rawValue)
                     || (error as? URLError)?.code == .cancelled
+                let httpStatus = (socket.response as? HTTPURLResponse)?.statusCode
+                if httpStatus == 401 || httpStatus == 403 {
+                    // Bad key: reconnecting is pointless.
+                    self.fail(ConnectionFailure.message(for: error, httpStatus: httpStatus))
+                    return
+                }
                 if tornDown {
-                    // 临时诊断：closeCode 区分服务端主动关闭(1000/1008/1011等)
-                    // 还是系统/网络掐断(0/.invalid 或 1006)。确诊后移除。
                     let closeCode = socket.closeCode.rawValue
                     #if DEBUG
                     diagnostic("socket_torn_down close_code=\(closeCode)")
@@ -215,12 +221,11 @@ final class InterpreterSession: ObservableObject {
                         self.reset()
                         self.phase = .idle
                     } else {
-                        self.fail("连接被系统中断，请重新开始。(诊断 close=\(closeCode))")
+                        self.reconnectOrFail(finalMessage: "连接被系统中断，请检查手表网络后重新开始。(诊断 close=\(closeCode))")
                     }
                     return
                 }
-                let httpStatus = (socket.response as? HTTPURLResponse)?.statusCode
-                self.fail(ConnectionFailure.message(for: error, httpStatus: httpStatus))
+                self.reconnectOrFail(finalMessage: ConnectionFailure.message(for: error, httpStatus: httpStatus))
             }
         }
         timeout = Task { [weak self] in
@@ -331,7 +336,7 @@ final class InterpreterSession: ObservableObject {
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
                     guard let self, self.currentID == id, self.phase.isRunning else { return }
-                    self.fail("音频上传失败，已停止录音。")
+                    self.reconnectOrFail(finalMessage: "音频上传失败，已停止录音。")
                 }
             }
         }
@@ -356,6 +361,7 @@ final class InterpreterSession: ObservableObject {
         })
         guard currentID == id, phase == .connecting else { return }
         phase = .listening
+        reconnectAttempts = 0
         diagnostic("audio_engine_started")
         // Avoid a nonessential system haptic at the exact moment capture starts.
     }
@@ -403,8 +409,28 @@ final class InterpreterSession: ObservableObject {
 
     private func fail(_ message: String) {
         diagnostic("session_failed")
+        notice = nil
         reset()
         phase = .failed(message)
+    }
+
+    /// Transport died mid-session (not auth, not user action): silently
+    /// re-establish up to 3 times, then surface the failure. Captions and
+    /// consent survive; the mic restarts with a brief gap.
+    private func reconnectOrFail(finalMessage: String) {
+        guard phase == .listening else { fail(finalMessage); return }
+        reconnectAttempts += 1
+        guard reconnectAttempts <= 3 else {
+            reconnectAttempts = 0
+            fail(finalMessage)
+            return
+        }
+        diagnostic("reconnect_attempt=\(reconnectAttempts)")
+        notice = "连接中断，正在重连…"
+        reset()
+        phase = .idle
+        isReconnecting = true
+        Task { [weak self] in await self?.start() }
     }
 
     private func diagnostic(_ event: String) {
@@ -431,6 +457,7 @@ final class InterpreterSession: ObservableObject {
     private func reset() {
         microphoneReceiving = false
         activity = nil
+        isReconnecting = false
         currentID = UUID()
         timeout?.cancel()
         sessionTimer?.cancel()
