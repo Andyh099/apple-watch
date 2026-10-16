@@ -172,7 +172,7 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     /// Sender-side confirmation for watch→iPhone utterance file transfers.
-    func session(_ session: WCSession, didFinishFileTransfer fileTransfer: WCSessionFileTransfer, error: Error?) {
+    func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
         #if os(watchOS)
         // Delegate callbacks are nonisolated; hop to the main actor.
         Task { @MainActor in
