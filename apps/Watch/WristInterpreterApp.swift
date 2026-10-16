@@ -45,7 +45,7 @@ struct InterpreterView: View {
                     // 字幕区：收听小字在上，译文大字在下，分隔线隔开，一目了然
                     VStack(alignment: .leading, spacing: 10) {
                         if !session.captions.source.isEmpty {
-                            Text(session.captions.source)
+                            Text(separatedLines(session.captions.source))
                                 .font(.caption).foregroundStyle(.secondary)
                                 .lineSpacing(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -197,6 +197,22 @@ final class InterpreterSession: ObservableObject {
                 }
             } catch {
                 guard let self, self.currentID == id, self.phase.isRunning else { return }
+                let nsError = error as NSError
+                // The system tore the socket down (sleep/suspend, network
+                // change): ECANCELED, never a service failure. Describe what
+                // happened instead of surfacing a raw code like 89.
+                let tornDown = (nsError.domain == NSPOSIXErrorDomain
+                                && nsError.code == POSIXErrorCode.ECANCELED.rawValue)
+                    || (error as? URLError)?.code == .cancelled
+                if tornDown {
+                    if self.phase == .ending {
+                        self.reset()
+                        self.phase = .idle
+                    } else {
+                        self.fail("连接被系统中断，请重新开始。")
+                    }
+                    return
+                }
                 let httpStatus = (socket.response as? HTTPURLResponse)?.statusCode
                 self.fail(ConnectionFailure.message(for: error, httpStatus: httpStatus))
             }

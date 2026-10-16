@@ -18,6 +18,9 @@ public enum ConnectionFailure {
             }
         }
         let value = error as NSError
+        if value.domain == NSPOSIXErrorDomain {
+            return "网络连接被系统中断，请检查手表网络后重新开始。"
+        }
         guard value.domain == NSURLErrorDomain else {
             return "翻译连接失败（错误码 \(value.code)），请检查服务后重试。"
         }
