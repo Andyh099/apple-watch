@@ -36,6 +36,8 @@ resources = {"iOS": [], "watchOS": []}
 for platform, directory in [("iOS", "iPhone"), ("watchOS", "Watch")]:
     path = f"apps/{directory}/Info.plist"
     refs[path] = file_ref(path, "text.plist.xml")
+    asset_path = f"apps/{directory}/Assets.xcassets"
+    refs[asset_path] = file_ref(asset_path, "folder.assetcatalog")
 products = {}
 for name in ["WristInterpreter", "WristInterpreterWatch"]:
     products[name] = add("product:" + name, "PBXFileReference", explicitFileType="wrapper.application", includeInIndex=0, path=name + ".app", sourceTree="BUILT_PRODUCTS_DIR")
@@ -62,10 +64,12 @@ embed_phase = add("watch:embed-phase", "PBXCopyFilesBuildPhase", buildActionMask
 target_ids = []
 for name, platform, paths in [("WristInterpreter", "iOS", phone + shared + core), ("WristInterpreterWatch", "watchOS", watch + shared + core)]:
     build_files = [add(name + ":build:" + p, "PBXBuildFile", fileRef=refs[p]) for p in paths]
+    directory = "iPhone" if platform == "iOS" else "Watch"
+    asset_build = add(name + ":resources:assets", "PBXBuildFile", fileRef=refs[f"apps/{directory}/Assets.xcassets"])
     phases = [
         add(name + ":sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=build_files, runOnlyForDeploymentPostprocessing=0),
         add(name + ":frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0),
-        add(name + ":resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0),
+        add(name + ":resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[asset_build], runOnlyForDeploymentPostprocessing=0),
     ]
     is_watch = platform == "watchOS"
     if not is_watch:
@@ -73,7 +77,8 @@ for name, platform, paths in [("WristInterpreter", "iOS", phone + shared + core)
     configs = []
     for config in ["Debug", "Release"]:
         settings = {
-            "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "",
+            "CODE_SIGN_STYLE": "Automatic", "DEVELOPMENT_TEAM": "TQWQ7W89M9",
+            "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
             "CURRENT_PROJECT_VERSION": "1", "MARKETING_VERSION": "0.1.0",
             "PRODUCT_NAME": "$(TARGET_NAME)", "GENERATE_INFOPLIST_FILE": "NO",
             "INFOPLIST_FILE": "apps/Watch/Info.plist" if is_watch else "apps/iPhone/Info.plist",

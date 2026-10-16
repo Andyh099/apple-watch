@@ -14,7 +14,10 @@ else
   echo "未配置 git remote，跳过拉取，用本地代码构建。"
 fi
 
-# 2. 构建（签名沿用工程里已配好的 Personal Team，不要改 Bundle ID）
+# 2. 生成 App 图标（macOS 自带 sips，无需装依赖）
+python3 scripts/generate-icons.py
+
+# 3. 构建（签名沿用工程里已配好的 Personal Team，不要改 Bundle ID）
 export DEVELOPER_DIR=/Applications/Xcode-27.0.0.app/Contents/Developer
 DERIVED=/private/tmp/wrist-interpreter-watch-build
 rm -rf "$DERIVED"
