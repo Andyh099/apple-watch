@@ -1,0 +1,416 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		093BA4E0BA3EA2DB70AEF4C9 /* apps/Shared/ConfigurationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA1B79D4401CCA038B70B0F /* apps/Shared/ConfigurationStore.swift */; };
+		1E3BF595B7EDDA7FFFEC2854 /* apps/Watch/InterpreterSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7A022237D6D1877E3A8D39 /* apps/Watch/InterpreterSession.swift */; };
+		46D8C8B3F8BFAFEF50D32290 /* Sources/InterpreterCore/SessionConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C99B4742EB5EBAAEC2B51B /* Sources/InterpreterCore/SessionConfiguration.swift */; };
+		6B24F4D4E111C33D1B11E7B0 /* Sources/InterpreterCore/AudioFrameBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4E227F88583FA52F1D061D /* Sources/InterpreterCore/AudioFrameBuffer.swift */; };
+		85D290E042E2EEA5B47F03EC /* Sources/InterpreterCore/TranscriptBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FA31F0F59ECC089945A3EB /* Sources/InterpreterCore/TranscriptBuffer.swift */; };
+		920586DFFD7B0E57CC43FED0 /* Sources/InterpreterCore/TranscriptBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FA31F0F59ECC089945A3EB /* Sources/InterpreterCore/TranscriptBuffer.swift */; };
+		9351CC03E80817E34A142945 /* WristInterpreterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CAA38964DE84C82DA4F49E0D /* WristInterpreterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		95BE6CA1D4B50EEB2DA4E8D8 /* Sources/InterpreterCore/SessionConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C99B4742EB5EBAAEC2B51B /* Sources/InterpreterCore/SessionConfiguration.swift */; };
+		975D76ECB1AC3E470AC80BC9 /* apps/Watch/WristInterpreterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BBE241535B99BC95C3B7224 /* apps/Watch/WristInterpreterApp.swift */; };
+		B41B379C8D4FDE5A1CA5503D /* apps/Shared/ConfigurationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA1B79D4401CCA038B70B0F /* apps/Shared/ConfigurationStore.swift */; };
+		B454E64126793311C0FA4ACD /* apps/iPhone/WristInterpreterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1C38E1E119CB8254BCADE5 /* apps/iPhone/WristInterpreterApp.swift */; };
+		B5F0D141854122671307542E /* apps/Watch/StartInterpretingIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4187EEEB117254066A654281 /* apps/Watch/StartInterpretingIntent.swift */; };
+		BAFFD7EE883BF4431C35DFD4 /* apps/Watch/DuplexAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2164C6A7C9CF39034E0224C /* apps/Watch/DuplexAudio.swift */; };
+		C4D14251AA762CE751D9C8F4 /* Sources/InterpreterCore/AudioFrameBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4E227F88583FA52F1D061D /* Sources/InterpreterCore/AudioFrameBuffer.swift */; };
+		5AEC2D7C026542A5A37745C1 /* Sources/InterpreterCore/ConnectionFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA784F8E3EA9362A4AEB3B6 /* Sources/InterpreterCore/ConnectionFailure.swift */; };
+		CAE56580ED9841B974BE3344 /* Sources/InterpreterCore/ConnectionFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA784F8E3EA9362A4AEB3B6 /* Sources/InterpreterCore/ConnectionFailure.swift */; };
+		31CD5DC2FF891EF03BF7530C /* Sources/InterpreterCore/StreamingPCMConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36DCB42D242097559B51506 /* Sources/InterpreterCore/StreamingPCMConverter.swift */; };
+		3B9C71E9D6CF4BEC99ACBEDF /* Sources/InterpreterCore/AudioUploadQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB300D403A376F0280E4C8BA /* Sources/InterpreterCore/AudioUploadQueue.swift */; };
+		4F029C807EF7A88855B7B2C5 /* Sources/InterpreterCore/AudioUploadSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F793E4CB43AC2BCFE5F955 /* Sources/InterpreterCore/AudioUploadSender.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		98142610152C8DCEE9CB96CB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E6F811C1ACEEE6C9FD4A9007;
+			remoteInfo = WristInterpreterWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F44C5530D8CB85AEE9350C0C /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				9351CC03E80817E34A142945 /* WristInterpreterWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4187EEEB117254066A654281 /* apps/Watch/StartInterpretingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/Watch/StartInterpretingIntent.swift; sourceTree = "<group>"; };
+		59FA31F0F59ECC089945A3EB /* Sources/InterpreterCore/TranscriptBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/TranscriptBuffer.swift; sourceTree = "<group>"; };
+		63C99B4742EB5EBAAEC2B51B /* Sources/InterpreterCore/SessionConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/SessionConfiguration.swift; sourceTree = "<group>"; };
+		6BBE241535B99BC95C3B7224 /* apps/Watch/WristInterpreterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/Watch/WristInterpreterApp.swift; sourceTree = "<group>"; };
+		8C7A022237D6D1877E3A8D39 /* apps/Watch/InterpreterSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/Watch/InterpreterSession.swift; sourceTree = "<group>"; };
+		A2164C6A7C9CF39034E0224C /* apps/Watch/DuplexAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/Watch/DuplexAudio.swift; sourceTree = "<group>"; };
+		A4544DA822A8F798396F3AD2 /* apps/iPhone/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = apps/iPhone/Info.plist; sourceTree = "<group>"; };
+		BC1C38E1E119CB8254BCADE5 /* apps/iPhone/WristInterpreterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/iPhone/WristInterpreterApp.swift; sourceTree = "<group>"; };
+		CAA38964DE84C82DA4F49E0D /* WristInterpreterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WristInterpreterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D03A82FFED5A1EB87BE67541 /* WristInterpreter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WristInterpreter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2642DB4A3416B2A81A6AFE0 /* apps/Watch/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = apps/Watch/Info.plist; sourceTree = "<group>"; };
+		EEA1B79D4401CCA038B70B0F /* apps/Shared/ConfigurationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = apps/Shared/ConfigurationStore.swift; sourceTree = "<group>"; };
+		FA4E227F88583FA52F1D061D /* Sources/InterpreterCore/AudioFrameBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/AudioFrameBuffer.swift; sourceTree = "<group>"; };
+		9AA784F8E3EA9362A4AEB3B6 /* Sources/InterpreterCore/ConnectionFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/ConnectionFailure.swift; sourceTree = "<group>"; };
+		C36DCB42D242097559B51506 /* Sources/InterpreterCore/StreamingPCMConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/StreamingPCMConverter.swift; sourceTree = "<group>"; };
+		AB300D403A376F0280E4C8BA /* Sources/InterpreterCore/AudioUploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/AudioUploadQueue.swift; sourceTree = "<group>"; };
+		D5F793E4CB43AC2BCFE5F955 /* Sources/InterpreterCore/AudioUploadSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/InterpreterCore/AudioUploadSender.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7D2315BCAC4C86FB1D9C1B5B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9AD79A6488C9AA06097190E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B28B7AF69320201D1CF206EB = {
+			isa = PBXGroup;
+			children = (
+				FA4E227F88583FA52F1D061D /* Sources/InterpreterCore/AudioFrameBuffer.swift */,
+				C36DCB42D242097559B51506 /* Sources/InterpreterCore/StreamingPCMConverter.swift */,
+				AB300D403A376F0280E4C8BA /* Sources/InterpreterCore/AudioUploadQueue.swift */,
+				D5F793E4CB43AC2BCFE5F955 /* Sources/InterpreterCore/AudioUploadSender.swift */,
+				9AA784F8E3EA9362A4AEB3B6 /* Sources/InterpreterCore/ConnectionFailure.swift */,
+				63C99B4742EB5EBAAEC2B51B /* Sources/InterpreterCore/SessionConfiguration.swift */,
+				59FA31F0F59ECC089945A3EB /* Sources/InterpreterCore/TranscriptBuffer.swift */,
+				EEA1B79D4401CCA038B70B0F /* apps/Shared/ConfigurationStore.swift */,
+				A2164C6A7C9CF39034E0224C /* apps/Watch/DuplexAudio.swift */,
+				8C7A022237D6D1877E3A8D39 /* apps/Watch/InterpreterSession.swift */,
+				4187EEEB117254066A654281 /* apps/Watch/StartInterpretingIntent.swift */,
+				6BBE241535B99BC95C3B7224 /* apps/Watch/WristInterpreterApp.swift */,
+				BC1C38E1E119CB8254BCADE5 /* apps/iPhone/WristInterpreterApp.swift */,
+				A4544DA822A8F798396F3AD2 /* apps/iPhone/Info.plist */,
+				E2642DB4A3416B2A81A6AFE0 /* apps/Watch/Info.plist */,
+				FBDC4F23F93125BBEEAE800C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FBDC4F23F93125BBEEAE800C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D03A82FFED5A1EB87BE67541 /* WristInterpreter.app */,
+				CAA38964DE84C82DA4F49E0D /* WristInterpreterWatch.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		04F2D57669EB523FC69E48B2 /* WristInterpreter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 090C6E26A4DB458CB3380F71 /* Build configuration list for PBXNativeTarget "WristInterpreter" */;
+			buildPhases = (
+				F3540D29B9A76CD10A75C525 /* Sources */,
+				7D2315BCAC4C86FB1D9C1B5B /* Frameworks */,
+				92497B07CD50CBBC4122AE67 /* Resources */,
+				F44C5530D8CB85AEE9350C0C /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7DDC04B8B250002BC65C92D2 /* PBXTargetDependency */,
+			);
+			name = WristInterpreter;
+			productName = WristInterpreter;
+			productReference = D03A82FFED5A1EB87BE67541 /* WristInterpreter.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E6F811C1ACEEE6C9FD4A9007 /* WristInterpreterWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD9E56B496FBDC40B8244698 /* Build configuration list for PBXNativeTarget "WristInterpreterWatch" */;
+			buildPhases = (
+				491868882D80C01FA5F491D5 /* Sources */,
+				A9AD79A6488C9AA06097190E /* Frameworks */,
+				018B022AA3F8DDE08A56046D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WristInterpreterWatch;
+			productName = WristInterpreterWatch;
+			productReference = CAA38964DE84C82DA4F49E0D /* WristInterpreterWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					04F2D57669EB523FC69E48B2 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					E6F811C1ACEEE6C9FD4A9007 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 4BA304E783CFBB9FA6E56552 /* Build configuration list for PBXProject "WristInterpreter" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = B28B7AF69320201D1CF206EB;
+			productRefGroup = FBDC4F23F93125BBEEAE800C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				04F2D57669EB523FC69E48B2 /* WristInterpreter */,
+				E6F811C1ACEEE6C9FD4A9007 /* WristInterpreterWatch */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		018B022AA3F8DDE08A56046D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		92497B07CD50CBBC4122AE67 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		491868882D80C01FA5F491D5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BAFFD7EE883BF4431C35DFD4 /* apps/Watch/DuplexAudio.swift in Sources */,
+				1E3BF595B7EDDA7FFFEC2854 /* apps/Watch/InterpreterSession.swift in Sources */,
+				B5F0D141854122671307542E /* apps/Watch/StartInterpretingIntent.swift in Sources */,
+				975D76ECB1AC3E470AC80BC9 /* apps/Watch/WristInterpreterApp.swift in Sources */,
+				B41B379C8D4FDE5A1CA5503D /* apps/Shared/ConfigurationStore.swift in Sources */,
+				6B24F4D4E111C33D1B11E7B0 /* Sources/InterpreterCore/AudioFrameBuffer.swift in Sources */,
+				31CD5DC2FF891EF03BF7530C /* Sources/InterpreterCore/StreamingPCMConverter.swift in Sources */,
+				3B9C71E9D6CF4BEC99ACBEDF /* Sources/InterpreterCore/AudioUploadQueue.swift in Sources */,
+				4F029C807EF7A88855B7B2C5 /* Sources/InterpreterCore/AudioUploadSender.swift in Sources */,
+				46D8C8B3F8BFAFEF50D32290 /* Sources/InterpreterCore/SessionConfiguration.swift in Sources */,
+				85D290E042E2EEA5B47F03EC /* Sources/InterpreterCore/TranscriptBuffer.swift in Sources */,
+				5AEC2D7C026542A5A37745C1 /* Sources/InterpreterCore/ConnectionFailure.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F3540D29B9A76CD10A75C525 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B454E64126793311C0FA4ACD /* apps/iPhone/WristInterpreterApp.swift in Sources */,
+				093BA4E0BA3EA2DB70AEF4C9 /* apps/Shared/ConfigurationStore.swift in Sources */,
+				C4D14251AA762CE751D9C8F4 /* Sources/InterpreterCore/AudioFrameBuffer.swift in Sources */,
+				95BE6CA1D4B50EEB2DA4E8D8 /* Sources/InterpreterCore/SessionConfiguration.swift in Sources */,
+				920586DFFD7B0E57CC43FED0 /* Sources/InterpreterCore/TranscriptBuffer.swift in Sources */,
+				CAE56580ED9841B974BE3344 /* Sources/InterpreterCore/ConnectionFailure.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7DDC04B8B250002BC65C92D2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E6F811C1ACEEE6C9FD4A9007 /* WristInterpreterWatch */;
+			targetProxy = 98142610152C8DCEE9CB96CB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2CE9A4B40366FE936579E378 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TQWQ7W89M9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = apps/iPhone/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.wristinterpreter.prototype;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		5283471FF90C511CFE244FFF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_TESTABILITY = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		55D56A61CA04E0D61F8E3E94 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TQWQ7W89M9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = apps/iPhone/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.wristinterpreter.prototype;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		736BEFDF1B8168E1DD19E7FF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TQWQ7W89M9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = apps/Watch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.wristinterpreter.prototype.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		AB52CB08E0FDF02BF6C67C33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E7CF125DED294CD40FEB9E98 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TQWQ7W89M9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = apps/Watch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.wristinterpreter.prototype.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		090C6E26A4DB458CB3380F71 /* Build configuration list for PBXNativeTarget "WristInterpreter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				55D56A61CA04E0D61F8E3E94 /* Debug */,
+				2CE9A4B40366FE936579E378 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4BA304E783CFBB9FA6E56552 /* Build configuration list for PBXProject "WristInterpreter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB52CB08E0FDF02BF6C67C33 /* Debug */,
+				5283471FF90C511CFE244FFF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD9E56B496FBDC40B8244698 /* Build configuration list for PBXNativeTarget "WristInterpreterWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				736BEFDF1B8168E1DD19E7FF /* Debug */,
+				E7CF125DED294CD40FEB9E98 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
