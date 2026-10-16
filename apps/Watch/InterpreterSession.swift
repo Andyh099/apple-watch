@@ -205,11 +205,17 @@ final class InterpreterSession: ObservableObject {
                                 && nsError.code == POSIXErrorCode.ECANCELED.rawValue)
                     || (error as? URLError)?.code == .cancelled
                 if tornDown {
+                    // 临时诊断：closeCode 区分服务端主动关闭(1000/1008/1011等)
+                    // 还是系统/网络掐断(0/.invalid 或 1006)。确诊后移除。
+                    let closeCode = socket.closeCode.rawValue
+                    #if DEBUG
+                    diagnostic("socket_torn_down close_code=\(closeCode)")
+                    #endif
                     if self.phase == .ending {
                         self.reset()
                         self.phase = .idle
                     } else {
-                        self.fail("连接被系统中断，请重新开始。")
+                        self.fail("连接被系统中断，请重新开始。(诊断 close=\(closeCode))")
                     }
                     return
                 }
