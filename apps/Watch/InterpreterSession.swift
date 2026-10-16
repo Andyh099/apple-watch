@@ -179,7 +179,7 @@ final class InterpreterSession: ObservableObject {
         socket.resume()
         // The task buffers this until the handshake completes; a 401 here means
         // a bad key and surfaces through the receiver below.
-        guard let startData = try? JSONEncoder().encode(LiveSessionStart()),
+        guard let startData = try? JSONEncoder().encode(LiveSessionStart(pair: ConfigurationStore.shared.languagePair)),
               let startText = String(data: startData, encoding: .utf8) else {
             if currentID == id { fail("无法构造会话请求。") }
             return
@@ -489,12 +489,14 @@ final class InterpreterSession: ObservableObject {
     }
 
     /// Sent once per connection, right after the WebSocket handshake.
+    /// The language pair is fixed when the session starts; switching pairs
+    /// mid-session requires starting a new session.
     private struct LiveSessionStart: Encodable {
         let type = "session.start"
         let event_id = "start_interpreter"
         struct Session: Encodable {
-            let model = InterpreterInstructions.model
-            let instructions = InterpreterInstructions.prompt
+            var model = InterpreterInstructions.model
+            var instructions: String
             struct Audio: Encodable {
                 struct Format: Encodable { let type = "audio/pcm"; let rate = 24_000 }
                 struct Output: Encodable { let voice = InterpreterInstructions.voice }
@@ -506,6 +508,9 @@ final class InterpreterSession: ObservableObject {
             let delegation = Delegation()
             let store = false
         }
-        let session = Session()
+        var session: Session
+        init(pair: LanguagePair) {
+            session = Session(instructions: InterpreterInstructions.prompt(for: pair))
+        }
     }
 }

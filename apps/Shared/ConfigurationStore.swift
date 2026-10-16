@@ -3,6 +3,22 @@ import Combine
 import Security
 import WatchConnectivity
 
+/// Which translation engine the watch uses. Synced from the iPhone app.
+enum EngineMode: String, CaseIterable {
+    /// Watch talks to OpenAI directly (realtime, needs network).
+    case online = "online"
+    /// Watch records an utterance and the iPhone translates fully on-device
+    /// (no network). Requires iOS 26+.
+    case offline = "offline"
+
+    var displayName: String {
+        switch self {
+        case .online: return "在线直连"
+        case .offline: return "离线手机中转"
+        }
+    }
+}
+
 /// Development pairing only. The OpenAI API key lives in the Keychain on each
 /// device and is synced to the watch over the system's encrypted
 /// WatchConnectivity channel. It is never logged, displayed, or put in a URL.
@@ -10,6 +26,19 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = ConfigurationStore()
     @Published private(set) var configuration: SessionConfiguration?
     @Published private(set) var status = "尚未配置 API Key"
+    /// Language pair picked in the iPhone app, synced to the watch.
+    /// Defaults to Chinese–English (the original behavior).
+    @Published private(set) var languagePair: LanguagePair = {
+        if let raw = UserDefaults.standard.string(forKey: "languagePair"),
+           let pair = LanguagePair(rawValue: raw) { return pair }
+        return .chineseEnglish
+    }()
+    /// Online (OpenAI realtime) or offline (iPhone on-device). Synced to watch.
+    @Published private(set) var engineMode: EngineMode = {
+        if let raw = UserDefaults.standard.string(forKey: "engineMode"),
+           let mode = EngineMode(rawValue: raw) { return mode }
+        return .online
+    }()
     private let service = "dev.wristinterpreter.openai-key"
     // Legacy relay-era storage; removed best-effort on first save.
     private let legacyService = "dev.wristinterpreter.device-token"
@@ -53,9 +82,33 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
             return
         }
         do {
-            try WCSession.default.updateApplicationContext(["apiKey": key])
+            try WCSession.default.updateApplicationContext([
+                "apiKey": key,
+                "languagePair": languagePair.rawValue,
+                "engineMode": engineMode.rawValue,
+            ])
             status = "已提交同步；请在手表确认接收"
         } catch { status = "已保存；暂时无法同步到手表" }
+    }
+
+    /// Called from the iPhone settings UI. Persists locally and pushes to
+    /// the watch over the encrypted WatchConnectivity channel.
+    func setLanguagePair(_ pair: LanguagePair) {
+        languagePair = pair
+        UserDefaults.standard.set(pair.rawValue, forKey: "languagePair")
+        #if os(iOS)
+        syncToWatch()
+        #endif
+    }
+
+    /// Called from the iPhone settings UI. Persists locally and pushes to
+    /// the watch over the encrypted WatchConnectivity channel.
+    func setEngineMode(_ mode: EngineMode) {
+        engineMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "engineMode")
+        #if os(iOS)
+        syncToWatch()
+        #endif
     }
 
     private func writeKey(_ key: String) throws {
@@ -91,11 +144,33 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         #if os(watchOS)
+        if let raw = applicationContext["languagePair"] as? String,
+           let pair = LanguagePair(rawValue: raw) {
+            DispatchQueue.main.async { self.setLanguagePair(pair) }
+        }
+        if let raw = applicationContext["engineMode"] as? String,
+           let mode = EngineMode(rawValue: raw) {
+            DispatchQueue.main.async { self.setEngineMode(mode) }
+        }
         guard let key = applicationContext["apiKey"] as? String else { return }
         DispatchQueue.main.async {
             do { try self.save(SessionConfiguration(apiKey: key)) }
             catch { self.status = "收到的 API Key 无效或无法保存" }
         }
+        #endif
+    }
+
+    /// Offline pipeline: watch sends utterance audio files here (iPhone),
+    /// iPhone replies with user-info dictionaries (watch).
+    func session(_ session: WCSession, didReceiveFile file: WCSessionFile) {
+        #if os(iOS)
+        OfflineTranslationEngine.shared.receivedFile(file)
+        #endif
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        #if os(watchOS)
+        OfflineSession.shared.receivedUserInfo(userInfo)
         #endif
     }
 
