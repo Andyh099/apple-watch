@@ -164,7 +164,10 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
     /// iPhone replies with user-info dictionaries (watch).
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         #if os(iOS)
-        OfflineTranslationEngine.shared.receivedFile(file)
+        // Delegate callbacks are nonisolated; hop to the main actor.
+        Task { @MainActor in
+            OfflineTranslationEngine.shared.receivedFile(file)
+        }
         #endif
     }
 

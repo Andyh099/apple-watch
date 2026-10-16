@@ -256,11 +256,11 @@ final class OfflineTranslationEngine {
         let availability = LanguageAvailability()
         let status = await availability.status(from: source, to: target)
         guard status == .installed else {
-            let a = OfflineLanguage.allCases.first { $0.translationLanguage.identifier == source.identifier }
-            let b = OfflineLanguage.allCases.first { $0.translationLanguage.identifier == target.identifier }
+            let a = OfflineLanguage.allCases.first { $0.translationLanguage == source }
+            let b = OfflineLanguage.allCases.first { $0.translationLanguage == target }
             throw EngineError.packNotInstalled(a ?? .chinese, b ?? .english)
         }
-        let session = try TranslationSession(installedSource: source, target: target)
+        let session = TranslationSession(installedSource: source, target: target)
         let response = try await session.translate(text)
         return response.targetText
     }
