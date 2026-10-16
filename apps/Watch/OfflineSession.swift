@@ -75,6 +75,9 @@ final class OfflineSession: NSObject, ObservableObject {
         notice = "直接说话，自动分句翻译"
         frameTask?.cancel()
         frameTask = Task { await self.consumeFrames(stream) }
+        // The audio session must be activated before capture starts —
+        // skipping this made every tap fail with "音频会话尚未就绪".
+        try await audio.prepareForConnection(sessionID: id)
         try await audio.start(
             sessionID: id,
             onFrame: { data in continuation.yield(data) },
@@ -82,6 +85,7 @@ final class OfflineSession: NSObject, ObservableObject {
                 Task { @MainActor [weak self] in self?.fail(message) }
             }
         )
+        notice = "直接说话，自动分句翻译"
     }
 
     func stop() {
