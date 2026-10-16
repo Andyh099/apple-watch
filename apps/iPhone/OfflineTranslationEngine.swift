@@ -115,7 +115,14 @@ final class OfflineTranslationEngine {
 
     /// Called from ConfigurationStore's WCSession delegate (iPhone side).
     nonisolated func receivedFile(_ file: WCSessionFile) {
-        Task { await OfflineTranslationEngine.shared.enqueue(file) }
+        Task { await OfflineTranslationEngine.shared.received(file) }
+    }
+
+    /// Ack immediately so the watch can tell "iPhone has the file" apart
+    /// from "iPhone is still working on it", then process in order.
+    private func received(_ file: WCSessionFile) async {
+        WCSession.default.transferUserInfo(["received": true])
+        enqueue(file)
     }
 
     /// Serial queue: utterances are processed in arrival order so the

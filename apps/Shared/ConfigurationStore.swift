@@ -171,6 +171,20 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
         #endif
     }
 
+    /// Sender-side confirmation for watch→iPhone utterance file transfers.
+    func session(_ session: WCSession, didFinishFileTransfer fileTransfer: WCSessionFileTransfer, error: Error?) {
+        #if os(watchOS)
+        // Delegate callbacks are nonisolated; hop to the main actor.
+        Task { @MainActor in
+            if let error {
+                OfflineSession.shared.notice = "音频文件发往手机失败：\(error.localizedDescription)"
+            } else {
+                OfflineSession.shared.fileDelivered()
+            }
+        }
+        #endif
+    }
+
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         #if os(watchOS)
         // Delegate callbacks are nonisolated; hop to the main actor.

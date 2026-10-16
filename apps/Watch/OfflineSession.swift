@@ -31,6 +31,10 @@ final class OfflineSession: NSObject, ObservableObject {
     /// stays 0 while talking, VAD isn't segmenting; if it grows while
     /// utteranceCount doesn't, the iPhone side is stuck.
     @Published private(set) var sentCount = 0
+    /// Files the system confirms reached the iPhone (sender-side callback).
+    @Published private(set) var deliveredCount = 0
+    /// Utterances the iPhone engine confirms it picked up (ack user-info).
+    @Published private(set) var receivedCount = 0
 
     var isRunning: Bool { phase == .listening }
 
@@ -56,6 +60,8 @@ final class OfflineSession: NSObject, ObservableObject {
         translatedText = ""
         utteranceCount = 0
         sentCount = 0
+        deliveredCount = 0
+        receivedCount = 0
         Task {
             guard await DuplexAudio.requestPermission() else {
                 self.phase = .failed("没有麦克风权限，请在系统设置中开启。")
@@ -146,6 +152,12 @@ final class OfflineSession: NSObject, ObservableObject {
 
     func receivedUserInfo(_ userInfo: [String: Any]) {
         guard phase == .listening else { return }
+        // iPhone ack: the engine picked up the utterance file.
+        if userInfo["received"] as? Bool == true {
+            receivedCount += 1
+            notice = "手机已收到 \(receivedCount) 句，识别中…"
+            return
+        }
         // Replies are serialized iPhone-side, so the latest is the current one.
         if let error = userInfo["error"] as? String {
             notice = error
@@ -159,6 +171,10 @@ final class OfflineSession: NSObject, ObservableObject {
         notice = nil
         speak(translated, languageCode: userInfo["targetLang"] as? String)
     }
+
+    /// Called by ConfigurationStore when WCSession confirms an utterance
+    /// file reached the iPhone.
+    func fileDelivered() { deliveredCount += 1 }
 
     // MARK: - Speak the translation on the watch speaker (offline voices)
 
