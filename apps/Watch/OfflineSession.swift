@@ -88,7 +88,10 @@ final class OfflineSession: NSObject, ObservableObject {
         frameTask = Task { await self.consumeFrames(stream) }
         // The audio session must be activated before capture starts —
         // skipping this made every tap fail with "音频会话尚未就绪".
-        try await audio.prepareForConnection(sessionID: id)
+        // .measurement: raw mic, no signal processing. Offline capture is
+        // pure recording (speaker silent), so VoIP tuning (.voiceChat)
+        // without voice processing leaves the mic path broken/silent.
+        try await audio.prepareForConnection(sessionID: id, mode: .measurement)
         try await audio.start(
             sessionID: id,
             onFrame: { data in continuation.yield(data) },

@@ -35,7 +35,7 @@ final class DuplexAudio: @unchecked Sendable {
 
     /// watchOS requires an active audio session before opening a WebSocket.
     /// This prepares the route only: no engine, input tap, or microphone samples.
-    func prepareForConnection(sessionID: UUID) async throws {
+    func prepareForConnection(sessionID: UUID, mode: AVAudioSession.Mode = .voiceChat) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 // Native activation cannot be cancelled. Do not overlap activations,
@@ -47,7 +47,7 @@ final class DuplexAudio: @unchecked Sendable {
                 do {
                     self.stopOnQueue()
                     let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.playAndRecord, mode: .voiceChat, options: [])
+                    try session.setCategory(.playAndRecord, mode: mode, options: [])
                     let generation = self.generation
                     self.activationPending = true
                     // On watchOS, synchronous setActive(true) is not sufficient
