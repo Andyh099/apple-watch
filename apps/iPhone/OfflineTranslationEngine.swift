@@ -93,6 +93,8 @@ final class OfflineTranslationEngine {
         case recognitionFailed(String)
         case emptySpeech
         case packNotInstalled(OfflineLanguage, OfflineLanguage)
+        case translateTimedOut
+        case recognitionTimedOut
 
         var errorDescription: String? {
             switch self {
@@ -108,6 +110,10 @@ final class OfflineTranslationEngine {
                 return "没识别到语音，请再说一遍。"
             case .packNotInstalled(let a, let b):
                 return "离线语言包未下载：请先在翻译 App 里下载「\(a.displayName)」「\(b.displayName)」的离线包（下过的包本 App 可直接用）。"
+            case .translateTimedOut:
+                return "翻译超时（45秒），已跳过这一句。请重试。"
+            case .recognitionTimedOut:
+                return "识别超时（25秒）：语音识别没有响应，已跳过这一句。请检查：设置 → 通用 → 键盘 → 听写语言 是否已下载对应语言。"
             }
         }
     }
@@ -184,6 +190,9 @@ final class OfflineTranslationEngine {
             statsLine = stats
             let (sourceText, sourceLang, viaServer) = try await recognize(buffer: buffer, pair: pair)
             let targetLang = pair.offlineOther(sourceLang)
+            // Stage notice: if the pipeline stalls from here on, the watch
+            // shows WHERE it is stuck instead of a generic "识别中…".
+            reply(["requestID": requestID, "stage": "translating"])
             let translated = try await translate(
                 sourceText,
                 source: sourceLang.translationLanguage,
@@ -303,12 +312,14 @@ final class OfflineTranslationEngine {
     }
 
     /// Fires pending recognitions with a timeout error and cancels the tasks.
+    /// The timeout is a DISTINCT error (recognitionTimedOut, not a generic
+    /// recognitionFailed) so callers can tell "the recognizer went silent"
+    /// apart from "it answered with an error" — see recognizeText.
     private func timeoutRecognition() {
         let pending = pendingContinuations
         pendingContinuations.removeAll()
-        let error = EngineError.recognitionFailed("识别超时（25秒）。请检查：设置 → 通用 → 键盘 → 听写语言 是否已下载对应语言")
         for (_, continuation) in pending {
-            continuation.resume(throwing: error)
+            continuation.resume(throwing: EngineError.recognitionTimedOut)
         }
         for task in activeTasks { task.cancel() }
         activeTasks.removeAll()
@@ -330,6 +341,11 @@ final class OfflineTranslationEngine {
                 let text = try await recognizeText(buffer: buffer, recognizer: recognizer, onDevice: true)
                 return (text, false)
             } catch {
+                // The watchdog fired: the recognizer went SILENT (not just
+                // "failed"). Falling through to the server path would retry
+                // with NO watchdog — if that hangs too, the serial queue
+                // wedges forever with no error. Fail fast instead.
+                if case EngineError.recognitionTimedOut = error { throw error }
                 onDeviceError = error
             }
         }
@@ -504,9 +520,50 @@ final class OfflineTranslationEngine {
             let b = OfflineLanguage.allCases.first { $0.translationLanguage == target }
             throw EngineError.packNotInstalled(a ?? .chinese, b ?? .english)
         }
-        let session = TranslationSession(installedSource: source, target: target)
-        let response = try await session.translate(text)
-        return response.targetText
+        // Translation previously had NO watchdog: a hung session.translate()
+        // wedged the serial queue forever — no error, no timeout, the watch
+        // stuck on "识别中…" while later utterances piled up behind it.
+        // Race it against 45 s; first finisher wins.
+        return try await withCheckedThrowingContinuation { continuation in
+            let state = TranslateOnce(continuation)
+            Task {
+                do {
+                    let session = TranslationSession(installedSource: source, target: target)
+                    let response = try await session.translate(text)
+                    state.complete(.success(response.targetText))
+                } catch {
+                    state.complete(.failure(error))
+                }
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
+                state.complete(.failure(EngineError.translateTimedOut))
+            }
+        }
+    }
+
+    /// One-shot completion box for the translate timeout race:
+    /// withCheckedThrowingContinuation traps on a second resume, so the
+    /// loser of the race must be ignored, not resumed.
+    private final class TranslateOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        private let continuation: CheckedContinuation<String, Error>
+        init(_ continuation: CheckedContinuation<String, Error>) {
+            self.continuation = continuation
+        }
+        func complete(_ result: Result<String, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !done else { return }
+            done = true
+            switch result {
+            case .success(let value):
+                continuation.resume(returning: value)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
     }
 
     // MARK: - Pack status for settings UI

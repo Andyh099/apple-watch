@@ -152,6 +152,11 @@ final class OfflineSession: NSObject, ObservableObject {
 
     func receivedUserInfo(_ userInfo: [String: Any]) {
         guard phase == .listening else { return }
+        // Stage notice from the iPhone: recognition done, translating now.
+        if userInfo["stage"] as? String == "translating" {
+            notice = "翻译中…"
+            return
+        }
         // iPhone ack: the engine picked up the utterance file.
         if userInfo["received"] as? Bool == true {
             receivedCount += 1
