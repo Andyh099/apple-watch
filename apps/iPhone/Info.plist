@@ -24,6 +24,8 @@
 	<false/>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>离线翻译需要把手表发来的语音转成文字，全程在手机本地完成，不会上传。</string>
+	<key>UIFileSharingEnabled</key>
+	<true/><!-- 诊断用：手表发来的每句录音存到 Documents/utterances，可在 Finder 里取出来播放排查 -->
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

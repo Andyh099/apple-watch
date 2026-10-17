@@ -169,10 +169,20 @@ final class OfflineTranslationEngine {
         let meta = item.metadata ?? [:]
         let requestID = meta["requestID"] as? String ?? UUID().uuidString
         let pair = LanguagePair(rawValue: meta["pair"] as? String ?? "") ?? .chineseEnglish
+        // Carried into the error reply so the watch can show one screenshot
+        // worth of audio diagnostics.
+        var statsLine = ""
         defer { try? FileManager.default.removeItem(at: item.url) }
         do {
             guard #available(iOS 26, *) else { throw EngineError.needsIOS26 }
-            let (sourceText, sourceLang, viaServer) = try await recognize(url: item.url, pair: pair)
+            // Keep a copy for human diagnosis: if the recognizer keeps
+            // saying "no speech", playing this file answers in seconds
+            // whether the watch actually captured speech. Visible in
+            // Finder via File Sharing (utterances/), newest 20 kept.
+            saveDebugCopy(url: item.url, requestID: requestID)
+            let (buffer, stats) = try loadAudioBuffer(url: item.url)
+            statsLine = stats
+            let (sourceText, sourceLang, viaServer) = try await recognize(buffer: buffer, pair: pair)
             let targetLang = pair.offlineOther(sourceLang)
             let translated = try await translate(
                 sourceText,
@@ -185,12 +195,41 @@ final class OfflineTranslationEngine {
                 "translatedText": translated,
                 "targetLang": targetLang.ttsCode,
                 "viaServer": viaServer,
+                "audioStats": statsLine,
             ])
         } catch {
             reply([
                 "requestID": requestID,
                 "error": (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
+                "audioStats": statsLine,
             ])
+        }
+    }
+
+    /// Debug archive of received utterances (see handle()).
+    private func saveDebugCopy(url: URL, requestID: String) {
+        do {
+            let dir = try FileManager.default.url(for: .documentDirectory,
+                                                  in: .userDomainMask,
+                                                  appropriateFor: nil,
+                                                  create: true)
+                .appendingPathComponent("utterances", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dst = dir.appendingPathComponent("utt-\(requestID).wav")
+            try? FileManager.default.removeItem(at: dst)
+            try FileManager.default.copyItem(at: url, to: dst)
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.creationDateKey],
+                options: [.skipsHiddenFiles])) ?? []
+            let oldestFirst = files.sorted {
+                let da = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let db = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return da < db
+            }
+            for old in oldestFirst.dropLast(20) { try? FileManager.default.removeItem(at: old) }
+        } catch {
+            // Diagnostics must never break the pipeline.
         }
     }
 
@@ -206,10 +245,11 @@ final class OfflineTranslationEngine {
     /// directly so the serial queue can never stall without an error.
     private var pendingContinuations: [UUID: CheckedContinuation<String, Error>] = [:]
 
-    /// Recognizes with both candidate locales in parallel, then picks the
-    /// transcript whose identified language matches its recognizer locale.
+    /// Recognizes with both candidate locales, each attempted independently:
+    /// a failure in one recognizer must never discard the other's
+    /// transcript (the old `try await (textA, textB)` did exactly that).
     /// Returns whether any recognition fell back to Apple's servers.
-    private func recognize(url: URL, pair: LanguagePair) async throws -> (String, OfflineLanguage, Bool) {
+    private func recognize(buffer: AVAudioPCMBuffer, pair: LanguagePair) async throws -> (String, OfflineLanguage, Bool) {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             throw EngineError.speechNotAuthorized
         }
@@ -225,15 +265,41 @@ final class OfflineTranslationEngine {
             await self?.timeoutRecognition()
         }
         defer { watchdog.cancel() }
-        async let textA = recognizeText(url: url, language: langA)
-        async let textB = recognizeText(url: url, language: langB)
-        let ((a, viaA), (b, viaB)) = try await (textA, textB)
-        guard !a.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || !b.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        func attempt(_ language: OfflineLanguage) async -> Result<(String, Bool), Error> {
+            do {
+                return .success(try await recognizeText(buffer: buffer, language: language))
+            } catch {
+                return .failure(error)
+            }
+        }
+        async let resA = attempt(langA)
+        async let resB = attempt(langB)
+        let (rA, rB) = await (resA, resB)
+        let okA = try? rA.get()
+        let okB = try? rB.get()
+        switch (okA, okB) {
+        case let (a?, b?):
+            guard !a.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || !b.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw EngineError.emptySpeech
+            }
+            let (text, lang) = pickBest(a: (a.0, langA), b: (b.0, langB))
+            return (text, lang, a.1 || b.1)
+        case let (a?, nil):
+            guard !a.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw EngineError.emptySpeech
+            }
+            return (a.0, langA, a.1)
+        case let (nil, b?):
+            guard !b.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw EngineError.emptySpeech
+            }
+            return (b.0, langB, b.1)
+        case (nil, nil):
+            if case .failure(let e) = rA { throw e }
+            if case .failure(let e) = rB { throw e }
             throw EngineError.emptySpeech
         }
-        let (text, lang) = pickBest(a: (a, langA), b: (b, langB))
-        return (text, lang, viaA || viaB)
     }
 
     /// Fires pending recognitions with a timeout error and cancels the tasks.
@@ -253,7 +319,7 @@ final class OfflineTranslationEngine {
     /// checkmark), falls back to server recognition so the feature works
     /// now and goes fully offline once the model arrives.
     /// Returns the transcript and whether the server path was used.
-    private func recognizeText(url: URL, language: OfflineLanguage) async throws -> (String, Bool) {
+    private func recognizeText(buffer: AVAudioPCMBuffer, language: OfflineLanguage) async throws -> (String, Bool) {
         guard let recognizer = SFSpeechRecognizer(locale: language.speechLocale),
               recognizer.isAvailable else {
             throw EngineError.noRecognizer(language)
@@ -261,14 +327,14 @@ final class OfflineTranslationEngine {
         var onDeviceError: Error?
         if recognizer.supportsOnDeviceRecognition {
             do {
-                let text = try await recognizeText(url: url, recognizer: recognizer, onDevice: true)
+                let text = try await recognizeText(buffer: buffer, recognizer: recognizer, onDevice: true)
                 return (text, false)
             } catch {
                 onDeviceError = error
             }
         }
         do {
-            let text = try await recognizeText(url: url, recognizer: recognizer, onDevice: false)
+            let text = try await recognizeText(buffer: buffer, recognizer: recognizer, onDevice: false)
             return (text, true)
         } catch {
             let serverMsg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -280,12 +346,14 @@ final class OfflineTranslationEngine {
         }
     }
 
-    private func recognizeText(url: URL, recognizer: SFSpeechRecognizer, onDevice: Bool) async throws -> String {
-        // Read the file ourselves with AVAudioFile: a corrupt file now
-        // throws a real, specific error instead of surfacing as
-        // AVErrorUnknown (-11800) from inside the Speech framework. Then
-        // stream PCM buffers — this avoids any file-handling quirks of
-        // SFSpeechURLRecognitionRequest entirely.
+    /// Reads the WAV ourselves with AVAudioFile: a corrupt file now throws
+    /// a real, specific error instead of surfacing as AVErrorUnknown
+    /// (-11800) from inside the Speech framework. Gates on the loudest
+    /// 500 ms window's energy — the watch VAD guarantees every real
+    /// utterance holds >= 350 ms of above-threshold speech, so the peak
+    /// window is the honest measure; a truncated transfer is quiet in
+    /// every window. Returns a one-line stat summary for diagnostics.
+    private func loadAudioBuffer(url: URL) throws -> (AVAudioPCMBuffer, String) {
         let audioFile: AVAudioFile
         do {
             audioFile = try AVAudioFile(forReading: url)
@@ -307,10 +375,68 @@ final class OfflineTranslationEngine {
         guard buffer.frameLength > 0 else {
             throw EngineError.recognitionFailed("音频为空")
         }
-        guard signalPresent(in: buffer) else {
-            throw EngineError.recognitionFailed("音频里没有有效语音信号（可能是静音片段），请靠近手表正常说话")
+        guard let stats = audioStats(buffer) else {
+            throw EngineError.recognitionFailed("音频格式不受支持（无法读取采样）")
         }
+        let durS = Double(buffer.frameLength) / 24_000.0
+        let statsLine = String(format: "%.1fs 能量%.0f/阈值150 峰值%.0f 过零%.2f",
+                               durS, stats.peakWindowRms, stats.peak, stats.zcr)
+        print("OfflineTranslationEngine: " + statsLine + " file=" + url.lastPathComponent)
+        guard stats.peakWindowRms > 150 else {
+            throw EngineError.recognitionFailed("音频里没有有效语音信号（\(statsLine)），请靠近手表正常说话")
+        }
+        return (buffer, statsLine)
+    }
 
+    /// Peak-window energy analysis of the int16 mono buffer. Sparse sampling
+    /// keeps it cheap; the peak 500 ms window (250 ms hop) is what matters.
+    private func audioStats(_ buffer: AVAudioPCMBuffer) -> (peakWindowRms: Double, peak: Double, zcr: Double)? {
+        guard let channel = buffer.int16ChannelData else { return nil }
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return nil }
+        let ptr = channel[0]
+        let winLen = 12_000, hop = 6_000  // 500 ms window, 250 ms hop @ 24 kHz
+        var peakWindowRms: Double = 0
+        var i = 0
+        while i < count {
+            let end = min(i + winLen, count)
+            var sum: Double = 0
+            var n = 0
+            var j = i
+            while j < end {
+                let s = Double(ptr[j])
+                sum += s * s
+                n += 1
+                j += 4
+            }
+            if n > 0 {
+                peakWindowRms = max(peakWindowRms, (sum / Double(n)).squareRoot())
+            }
+            i += hop
+        }
+        var peak: Double = 0
+        var crossings = 0
+        var prevSign = 0
+        var k = 0
+        while k < count {
+            let s = Double(ptr[k])
+            let a = abs(s)
+            if a > peak { peak = a }
+            let sign = s > 0 ? 1 : (s < 0 ? -1 : 0)
+            if sign != 0 {
+                if prevSign != 0, sign != prevSign { crossings += 1 }
+                prevSign = sign
+            }
+            k += 8
+        }
+        let zcr = Double(crossings) / Double(max(count / 8, 1))
+        return (peakWindowRms, peak, zcr)
+    }
+
+    /// Streams the PCM buffer into the recognizer. The buffer was already
+    /// validated by loadAudioBuffer, so any failure here is the
+    /// recognizer's own verdict on the audio.
+    private func recognizeText(buffer: AVAudioPCMBuffer, recognizer: SFSpeechRecognizer, onDevice: Bool) async throws -> String {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = onDevice
         let id = UUID()
@@ -336,27 +462,6 @@ final class OfflineTranslationEngine {
             request.append(buffer)
             request.endAudio()
         }
-    }
-
-    /// The VAD already gated on energy watch-side, but a truncated transfer
-    /// can still deliver near-silence; catch it here with a clear message
-    /// instead of the recognizer's vague "no speech detected".
-    private func signalPresent(in buffer: AVAudioPCMBuffer) -> Bool {
-        guard let channel = buffer.int16ChannelData else { return true }
-        let count = Int(buffer.frameLength)
-        guard count > 0 else { return false }
-        var sum: Double = 0
-        var n = 0
-        var i = 0
-        let ptr = channel[0]
-        while i < count {
-            let s = Double(ptr[i])
-            sum += s * s
-            n += 1
-            i += 16 // sparse sampling is plenty for an energy gate
-        }
-        guard n > 0 else { return false }
-        return (sum / Double(n)).squareRoot() > 120
     }
 
     private func endTask(_ task: SFSpeechRecognitionTask?) {

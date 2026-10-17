@@ -160,7 +160,11 @@ final class OfflineSession: NSObject, ObservableObject {
         }
         // Replies are serialized iPhone-side, so the latest is the current one.
         if let error = userInfo["error"] as? String {
-            notice = error
+            // Audio stats from the iPhone (duration / peak-window energy /
+            // peak / zero-crossing rate) ride along so one screenshot tells
+            // whether the file held speech or just noise.
+            let stats = (userInfo["audioStats"] as? String).map { "\n\($0)" } ?? ""
+            notice = error + stats
             return
         }
         guard let translated = userInfo["translatedText"] as? String,
@@ -186,7 +190,12 @@ final class OfflineSession: NSObject, ObservableObject {
            let voice = AVSpeechSynthesisVoice(language: code) {
             utterance.voice = voice
         }
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        // Do NOT flip the shared session to .playback here: the capture
+        // engine lives on the .playAndRecord route, the category was never
+        // restored, and after the first TTS the mic would stay broken.
+        // watchOS routes the synthesizer to the speaker under .playAndRecord;
+        // VAD is paused while speaking (plus voice-processing echo
+        // cancellation), so there is no feedback loop.
         ttsSpeaking = true
         synthesizer.speak(utterance)
     }
@@ -333,8 +342,13 @@ struct VadSegmenter {
             speechWindows = 0
             pcm = Data()
         }
-        let ms = pcm.count / 48  // 24 kHz * 2 bytes = 48 bytes/ms
-        guard ms >= Self.minSpeechMs else { return nil }
+        // Only real speech counts toward the minimum: the trailing-silence
+        // padding (up to 800 ms) must not let a 40 ms click through as an
+        // "utterance" — those files have energy but no speech, and the
+        // recognizer can only answer "no speech detected".
+        let totalWindows = pcm.count / Self.windowBytes
+        let speechMs = (totalWindows - silenceWindows) * 20
+        guard speechMs >= Self.minSpeechMs else { return nil }
         return pcm
     }
 
