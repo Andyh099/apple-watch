@@ -94,7 +94,6 @@ final class OfflineTranslationEngine {
         case emptySpeech
         case packNotInstalled(OfflineLanguage, OfflineLanguage)
         case translateTimedOut
-        case recognitionTimedOut
 
         var errorDescription: String? {
             switch self {
@@ -112,8 +111,6 @@ final class OfflineTranslationEngine {
                 return "离线语言包未下载：请先在翻译 App 里下载「\(a.displayName)」「\(b.displayName)」的离线包（下过的包本 App 可直接用）。"
             case .translateTimedOut:
                 return "翻译超时（45秒），已跳过这一句。请重试。"
-            case .recognitionTimedOut:
-                return "识别超时（25秒）：语音识别没有响应，已跳过这一句。请检查：设置 → 通用 → 键盘 → 听写语言 是否已下载对应语言。"
             }
         }
     }
@@ -256,32 +253,64 @@ final class OfflineTranslationEngine {
 
     // MARK: - On-device speech recognition
 
-    private var activeTasks: [SFSpeechRecognitionTask] = []
-    /// Continuations waiting on recognition callbacks. The result handler
-    /// can go silent (wedged on-device model); the watchdog resumes these
-    /// directly so the serial queue can never stall without an error.
-    private var pendingContinuations: [UUID: CheckedContinuation<String, Error>] = [:]
+    /// Thread-safe one-shot box for a recognition attempt. The Speech
+    /// framework calls back on its own queue (NOT the MainActor) and the
+    /// timeout fires on a global GCD queue — both complete the attempt
+    /// through here, first caller wins, exactly once.
+    private final class RecognitionBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<String, Error>?
+        private var task: SFSpeechRecognitionTask?
+        private var timeout: DispatchWorkItem?
+
+        init(_ continuation: CheckedContinuation<String, Error>) {
+            self.continuation = continuation
+        }
+
+        func setTask(_ task: SFSpeechRecognitionTask) {
+            lock.lock()
+            defer { lock.unlock() }
+            // If we already completed (timeout won), cancel the late task.
+            if continuation == nil { task.cancel(); return }
+            self.task = task
+        }
+
+        func setTimeout(_ timeout: DispatchWorkItem) {
+            lock.lock()
+            defer { lock.unlock() }
+            if continuation == nil { timeout.cancel(); return }
+            self.timeout = timeout
+        }
+
+        func complete(_ result: Result<String, Error>) {
+            lock.lock()
+            guard let continuation else { lock.unlock(); return }
+            self.continuation = nil
+            let task = self.task
+            self.task = nil
+            let timeout = self.timeout
+            self.timeout = nil
+            lock.unlock()
+            timeout?.cancel()
+            task?.cancel()
+            switch result {
+            case .success(let text): continuation.resume(returning: text)
+            case .failure(let error): continuation.resume(throwing: error)
+            }
+        }
+    }
 
     /// Recognizes with both candidate locales, each attempted independently:
     /// a failure in one recognizer must never discard the other's
     /// transcript (the old `try await (textA, textB)` did exactly that).
     /// Returns whether any recognition fell back to Apple's servers.
+    /// Every attempt carries its own GCD timeout, so the serial queue can
+    /// never wedge silently — the watch always gets a result or an error.
     private func recognize(buffer: AVAudioPCMBuffer, pair: LanguagePair) async throws -> (String, OfflineLanguage, Bool) {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             throw EngineError.speechNotAuthorized
         }
         let (langA, langB) = pair.offlineLanguages
-        // Watchdog: if neither recognizer answers within 25 s, fail loudly
-        // instead of wedging the queue — otherwise the watch shows nothing.
-        let watchdog = Task { [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: 25_000_000_000)
-            } catch {
-                return // recognition finished in time; watchdog cancelled
-            }
-            await self?.timeoutRecognition()
-        }
-        defer { watchdog.cancel() }
         func attempt(_ language: OfflineLanguage) async -> Result<(String, Bool), Error> {
             do {
                 return .success(try await recognizeText(buffer: buffer, language: language))
@@ -319,20 +348,6 @@ final class OfflineTranslationEngine {
         }
     }
 
-    /// Fires pending recognitions with a timeout error and cancels the tasks.
-    /// The timeout is a DISTINCT error (recognitionTimedOut, not a generic
-    /// recognitionFailed) so callers can tell "the recognizer went silent"
-    /// apart from "it answered with an error" — see recognizeText.
-    private func timeoutRecognition() {
-        let pending = pendingContinuations
-        pendingContinuations.removeAll()
-        for (_, continuation) in pending {
-            continuation.resume(throwing: EngineError.recognitionTimedOut)
-        }
-        for task in activeTasks { task.cancel() }
-        activeTasks.removeAll()
-    }
-
     /// Tries on-device recognition first; if the on-device model isn't
     /// downloaded yet (the 听写语言 download can lag behind the Settings
     /// checkmark), falls back to server recognition so the feature works
@@ -349,11 +364,9 @@ final class OfflineTranslationEngine {
                 let text = try await recognizeText(buffer: buffer, recognizer: recognizer, onDevice: true)
                 return (text, false)
             } catch {
-                // The watchdog fired: the recognizer went SILENT (not just
-                // "failed"). Falling through to the server path would retry
-                // with NO watchdog — if that hangs too, the serial queue
-                // wedges forever with no error. Fail fast instead.
-                if case EngineError.recognitionTimedOut = error { throw error }
+                // On-device failed or timed out: fall through to the server
+                // path, which carries its own GCD timeout — the queue can't
+                // wedge either way.
                 onDeviceError = error
             }
         }
@@ -463,34 +476,37 @@ final class OfflineTranslationEngine {
     private func recognizeText(buffer: AVAudioPCMBuffer, recognizer: SFSpeechRecognizer, onDevice: Bool) async throws -> String {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = onDevice
-        let id = UUID()
         return try await withCheckedThrowingContinuation { continuation in
-            pendingContinuations[id] = continuation
-            var task: SFSpeechRecognitionTask?
-            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                guard let self else { return }
-                // Already resumed (e.g. by the watchdog): ignore late callbacks.
-                guard self.pendingContinuations.removeValue(forKey: id) != nil else { return }
+            let box = RecognitionBox(continuation)
+            // Bulletproof timeout on a global GCD queue: fires even if Swift
+            // concurrency scheduling is wedged. On-device gets 15 s (it's a
+            // fast-path attempt; slow means the model isn't ready) and the
+            // server fallback gets 25 s.
+            let timeout = DispatchWorkItem {
+                let path = onDevice ? "端侧" : "在线"
+                let seconds = onDevice ? 15 : 25
+                box.complete(.failure(EngineError.recognitionFailed("识别超时（\(path)\(seconds)秒无响应）")))
+            }
+            box.setTimeout(timeout)
+            DispatchQueue.global(qos: .userInitiated)
+                .asyncAfter(deadline: .now() + (onDevice ? 15 : 25), execute: timeout)
+            // The callback runs on the Speech framework's queue, NOT the
+            // MainActor — everything goes through the thread-safe box.
+            let task = recognizer.recognitionTask(with: request) { result, error in
                 if let error {
-                    self.endTask(task)
                     let ns = error as NSError
-                    continuation.resume(throwing: EngineError.recognitionFailed("\(error.localizedDescription)（\(ns.domain) \(ns.code)）"))
+                    box.complete(.failure(EngineError.recognitionFailed("\(error.localizedDescription)（\(ns.domain) \(ns.code)）")))
                     return
                 }
                 if let result, result.isFinal {
-                    self.endTask(task)
-                    continuation.resume(returning: result.bestTranscription.formattedString)
+                    box.complete(.success(result.bestTranscription.formattedString))
                 }
+                // Non-final results are ignored; only the final transcript matters.
             }
-            if let task { self.activeTasks.append(task) }
+            box.setTask(task)
             request.append(buffer)
             request.endAudio()
         }
-    }
-
-    private func endTask(_ task: SFSpeechRecognitionTask?) {
-        guard let task else { return }
-        activeTasks.removeAll { $0 === task }
     }
 
     private func pickBest(
@@ -531,7 +547,8 @@ final class OfflineTranslationEngine {
         // Translation previously had NO watchdog: a hung session.translate()
         // wedged the serial queue forever — no error, no timeout, the watch
         // stuck on "识别中…" while later utterances piled up behind it.
-        // Race it against 45 s; first finisher wins.
+        // Race it against 45 s on a GCD timer (not Task.sleep); first
+        // finisher wins.
         return try await withCheckedThrowingContinuation { continuation in
             let state = TranslateOnce(continuation)
             Task {
@@ -543,8 +560,7 @@ final class OfflineTranslationEngine {
                     state.complete(.failure(error))
                 }
             }
-            Task {
-                try? await Task.sleep(nanoseconds: 45_000_000_000)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 45) {
                 state.complete(.failure(EngineError.translateTimedOut))
             }
         }
