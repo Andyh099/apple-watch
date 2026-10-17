@@ -35,6 +35,10 @@ final class OfflineSession: NSObject, ObservableObject {
     @Published private(set) var deliveredCount = 0
     /// Utterances the iPhone engine confirms it picked up (ack user-info).
     @Published private(set) var receivedCount = 0
+    /// Live mic energy (RMS of recent 100 ms frames), refreshed ~2x/sec.
+    /// Diagnostic: 0 while talking = mic path broken; high but sentCount
+    /// stuck at 0 = VAD thresholds wrong.
+    @Published private(set) var micLevel: Double = 0
 
     var isRunning: Bool { phase == .listening }
 
@@ -62,6 +66,7 @@ final class OfflineSession: NSObject, ObservableObject {
         sentCount = 0
         deliveredCount = 0
         receivedCount = 0
+        micLevel = 0
         Task {
             guard await DuplexAudio.requestPermission() else {
                 self.phase = .failed("没有麦克风权限，请在系统设置中开启。")
@@ -88,10 +93,13 @@ final class OfflineSession: NSObject, ObservableObject {
         frameTask = Task { await self.consumeFrames(stream) }
         // The audio session must be activated before capture starts —
         // skipping this made every tap fail with "音频会话尚未就绪".
-        // .measurement: raw mic, no signal processing. Offline capture is
-        // pure recording (speaker silent), so VoIP tuning (.voiceChat)
-        // without voice processing leaves the mic path broken/silent.
-        try await audio.prepareForConnection(sessionID: id, mode: .measurement)
+        // .default: plain recording mode, no VoIP tuning. Offline capture is
+        // pure recording with no live far-end, so voice processing is off
+        // (it howls with no far-end reference when TTS bypasses the engine).
+        // .voiceChat's VoIP tuning without voice processing leaves the mic
+        // silent, and .measurement was tried on watchOS and also delivered
+        // silence — .default is the last standard mode that hasn't been tried.
+        try await audio.prepareForConnection(sessionID: id, mode: .default)
         try await audio.start(
             sessionID: id,
             onFrame: { data in continuation.yield(data) },
@@ -128,13 +136,36 @@ final class OfflineSession: NSObject, ObservableObject {
 
     private func consumeFrames(_ stream: AsyncStream<Data>) async {
         var vad = VadSegmenter()
+        var lastMeterUpdate = Date.distantPast
         for await data in stream {
             guard !Task.isCancelled else { break }
+            // Mic meter: throttle UI updates to ~2/sec. Runs before the VAD
+            // gate so silence vs. VAD-misfire is distinguishable on screen.
+            if Date().timeIntervalSince(lastMeterUpdate) > 0.5 {
+                lastMeterUpdate = Date()
+                micLevel = rmsOf(data)
+            }
             if ttsSpeaking { continue }  // don't listen to our own speaker
             if let pcm = vad.process(data) {
                 sendUtterance(pcm)
             }
         }
+    }
+
+    /// RMS of one 100 ms int16 mono frame, for the mic level meter.
+    private func rmsOf(_ data: Data) -> Double {
+        let n = data.count / 2
+        guard n > 0 else { return 0 }
+        var sum: Double = 0
+        data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+            for i in 0..<n {
+                let lo = UInt16(ptr[i * 2])
+                let hi = UInt16(ptr[i * 2 + 1])
+                let s = Double(Int16(bitPattern: lo | (hi << 8)))
+                sum += s * s
+            }
+        }
+        return (sum / Double(n)).squareRoot()
     }
 
     private func sendUtterance(_ pcm: Data) {
