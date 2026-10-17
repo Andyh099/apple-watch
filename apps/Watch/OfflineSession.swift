@@ -94,7 +94,11 @@ final class OfflineSession: NSObject, ObservableObject {
             onFrame: { data in continuation.yield(data) },
             onFailure: { [weak self] message in
                 Task { @MainActor [weak self] in self?.fail(message) }
-            }
+            },
+            // No voice processing: the speaker is silent while we capture,
+            // and with no far-end reference the echo canceller diverges
+            // into a full-scale howl (the "no speech detected" files).
+            voiceProcessing: false
         )
         notice = "直接说话，自动分句翻译"
     }
@@ -143,6 +147,10 @@ final class OfflineSession: NSObject, ObservableObject {
         WCSession.default.transferFile(url, metadata: [
             "requestID": requestID,
             "pair": ConfigurationStore.shared.languagePair.rawValue,
+            // Lets the iPhone drop files that sat in the transfer queue
+            // while it was closed (old builds / previous tests) instead of
+            // erroring on them and confusing the current test.
+            "sentAt": Date().timeIntervalSince1970,
         ])
         sentCount += 1
         notice = "已发送 \(sentCount) 句，等待手机识别…"

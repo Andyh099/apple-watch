@@ -140,6 +140,14 @@ final class OfflineTranslationEngine {
     /// The URL is our own tmp copy (see takeOwnership).
     func received(_ url: URL, metadata: [String: Any]?) async {
         WCSession.default.transferUserInfo(["received": true])
+        // Drop files that queued while the app was closed (previous tests,
+        // old builds). Without this they error out and pollute the current
+        // test with stale "no speech detected" failures.
+        if let sentAt = metadata?["sentAt"] as? Double,
+           Date().timeIntervalSince1970 - sentAt > 300 {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         enqueue((url, metadata))
     }
 

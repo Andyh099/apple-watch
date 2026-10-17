@@ -20,6 +20,12 @@ final class DuplexAudio: @unchecked Sendable {
     private var startupReconfigurations = 0
     private var reconfigurationPending = false
     private var onFailure: (@Sendable (String) -> Void)?
+    /// Whether the input node uses voice processing (echo cancellation).
+    /// Online mode needs it (speaker plays while mic records). Offline mode
+    /// must NOT use it: the speaker is silent during capture, and with no
+    /// far-end reference the echo canceller can diverge into a full-scale
+    /// howl — which is exactly what the "no speech detected" files were.
+    private var useVoiceProcessing = true
 
     static func requestPermission() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -71,7 +77,7 @@ final class DuplexAudio: @unchecked Sendable {
         }
     }
 
-    func start(sessionID: UUID, onFrame: @escaping @Sendable (Data) -> Void, onFailure: @escaping @Sendable (String) -> Void) async throws {
+    func start(sessionID: UUID, onFrame: @escaping @Sendable (Data) -> Void, onFailure: @escaping @Sendable (String) -> Void, voiceProcessing: Bool = true) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
                 // A cancelled connection must not start capture or stop a newer session.
@@ -82,6 +88,7 @@ final class DuplexAudio: @unchecked Sendable {
                 do {
                     // Keep the already-active route throughout the WebSocket lifetime.
                     self.onFailure = onFailure
+                    self.useVoiceProcessing = voiceProcessing
                     let engine = AVAudioEngine()
                     self.engine = engine
                     let generation = self.generation
@@ -94,8 +101,10 @@ final class DuplexAudio: @unchecked Sendable {
                             self?.configurationChanged(generation: generation, onFrame: onFrame)
                         }
                     }
-                    try engine.inputNode.setVoiceProcessingEnabled(true)
-                    guard engine.inputNode.isVoiceProcessingEnabled else { throw AudioError.voiceProcessingUnavailable }
+                    if voiceProcessing {
+                        try engine.inputNode.setVoiceProcessingEnabled(true)
+                        guard engine.inputNode.isVoiceProcessingEnabled else { throw AudioError.voiceProcessingUnavailable }
+                    }
                     let player = AVAudioPlayerNode()
                     self.player = player
                     engine.attach(player)
@@ -113,7 +122,9 @@ final class DuplexAudio: @unchecked Sendable {
     /// Re-read hardware formats after voice processing or route configuration.
     /// The same active session is retained; this never reactivates a stopped one.
     private func configureAndStart(engine: AVAudioEngine, player: AVAudioPlayerNode, onFrame: @escaping @Sendable (Data) -> Void) throws {
-        guard engine.inputNode.isVoiceProcessingEnabled else { throw AudioError.voiceProcessingUnavailable }
+        if useVoiceProcessing {
+            guard engine.inputNode.isVoiceProcessingEnabled else { throw AudioError.voiceProcessingUnavailable }
+        }
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         let outputFormat = engine.outputNode.inputFormat(forBus: 0)
