@@ -173,7 +173,10 @@ final class OfflineSession: NSObject, ObservableObject {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("utt-\(requestID).wav")
         do {
-            try wavData(pcm: pcm).write(to: url)
+            // The watch mic in .default mode delivers low-gain audio (speech
+            // ~500 RMS, barely above the VAD gate). Boost 4x (12 dB) so the
+            // recognizer gets a healthy level; soft-clip at full scale.
+            try wavData(pcm: amplify(pcm, factor: 4.0)).write(to: url)
         } catch {
             notice = "写录音文件失败"
             return
@@ -259,6 +262,24 @@ final class OfflineSession: NSObject, ObservableObject {
     private func endExtendedRuntime() {
         runtimeSession?.invalidate()
         runtimeSession = nil
+    }
+
+    /// 4x digital gain with soft clipping. The watch mic path in .default
+    /// mode is quiet; the recognizer needs a hotter signal.
+    private func amplify(_ data: Data, factor: Double) -> Data {
+        var out = Data(count: data.count)
+        out.withUnsafeMutableBytes { (dst: UnsafeMutableRawBufferPointer) in
+            data.withUnsafeBytes { (src: UnsafeRawBufferPointer) in
+                let n = data.count / 2
+                for i in 0..<n {
+                    let s = Int(src.loadUnaligned(fromByteOffset: i * 2, as: Int16.self))
+                    let v = Int(Double(s) * factor)
+                    let clipped = max(-32768, min(32767, v))
+                    dst.storeBytes(of: Int16(clipped).littleEndian, toByteOffset: i * 2, as: Int16.self)
+                }
+            }
+        }
+        return out
     }
 
     // MARK: - WAV writer (24 kHz, 16-bit, mono)
