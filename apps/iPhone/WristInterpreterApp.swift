@@ -3,6 +3,13 @@ import Speech
 
 @main
 struct WristInterpreterPhoneApp: App {
+    init() {
+        // 关键：WCSession 代理必须在后台唤醒时也设置。之前只在 SettingsView
+        // 里访问 ConfigurationStore.shared，而后台唤醒时 View 不会创建，
+        // 导致代理没设置、手表发来的文件石沉大海——必须打开 App 才行。
+        _ = ConfigurationStore.shared
+    }
+
     var body: some Scene { WindowGroup { SettingsView() } }
 }
 

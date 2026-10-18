@@ -4,6 +4,9 @@ import Speech
 import AVFoundation
 import NaturalLanguage
 import Translation
+#if os(iOS)
+import UIKit
+#endif
 
 /// The three languages the user actually translates between.
 /// iPhone-only: Translation framework has no watchOS counterpart.
@@ -160,7 +163,32 @@ final class OfflineTranslationEngine {
     private var queue: [(url: URL, metadata: [String: Any]?)] = []
     private var processing = false
 
+    #if os(iOS)
+    /// Background task keeping the app alive while the serial queue drains.
+    /// When iOS wakes us in the background for a WCSession file, the system
+    /// only grants limited time — recognition + translation can take 10-30s.
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
+
+    private func beginBgTaskIfNeeded() {
+        guard bgTask == .invalid else { return }
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "WristInterpreterProcessing") { [weak self] in
+            guard let self, self.bgTask != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(self.bgTask)
+            self.bgTask = .invalid
+        }
+    }
+
+    private func endBgTaskIfIdle() {
+        guard queue.isEmpty, !processing, bgTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(bgTask)
+        bgTask = .invalid
+    }
+    #endif
+
     private func enqueue(_ item: (url: URL, metadata: [String: Any]?)) {
+        #if os(iOS)
+        beginBgTaskIfNeeded()
+        #endif
         queue.append(item)
         processNext()
     }
@@ -173,6 +201,9 @@ final class OfflineTranslationEngine {
             await self.handle(item)
             self.processing = false
             self.processNext()
+            #if os(iOS)
+            self.endBgTaskIfIdle()
+            #endif
         }
     }
 
