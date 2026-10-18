@@ -164,9 +164,14 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
     /// iPhone replies with user-info dictionaries (watch).
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         #if os(iOS)
+        // Sync wake task: iOS may suspend us as soon as this method returns,
+        // before the async Task below even starts. Without this, "已收" stays
+        // 0 when the app is in the background.
+        let wakeTask = OfflineTranslationEngine.beginWakeTask()
         // Copy SYNCHRONOUSLY: the system may delete the Inbox original as
         // soon as this method returns; everything downstream uses our copy.
         guard let (url, metadata) = OfflineTranslationEngine.takeOwnership(of: file) else {
+            OfflineTranslationEngine.endWakeTask(wakeTask)
             Task { @MainActor in
                 await OfflineTranslationEngine.shared.reportReceiveFailure(metadata: file.metadata)
             }
@@ -175,6 +180,9 @@ final class ConfigurationStore: NSObject, ObservableObject, WCSessionDelegate {
         // Delegate callbacks are nonisolated; hop to the main actor.
         Task { @MainActor in
             await OfflineTranslationEngine.shared.received(url, metadata: metadata)
+            // The engine's own bg task (begun in enqueue) now owns the
+            // lifetime; the wake task just needed to get us this far.
+            OfflineTranslationEngine.endWakeTask(wakeTask)
         }
         #endif
     }

@@ -135,6 +135,36 @@ final class OfflineTranslationEngine {
         }
     }
 
+    #if os(iOS)
+    /// Begins a background task SYNCHRONOUSLY from the WCSession delegate.
+    /// When iOS wakes a suspended app for WCSession, it may suspend the app
+    /// again as soon as the delegate method returns — before the async Task
+    /// even starts. This keeps us alive until the Task runs and the engine's
+    /// own processing task takes over. Must be balanced with endWakeTask.
+    nonisolated static func beginWakeTask() -> UIBackgroundTaskIdentifier {
+        let begin = {
+            UIApplication.shared.beginBackgroundTask(withName: "WCSessionWake") { }
+        }
+        if Thread.isMainThread {
+            return begin()
+        } else {
+            return DispatchQueue.main.sync(execute: begin)
+        }
+    }
+
+    nonisolated static func endWakeTask(_ task: UIBackgroundTaskIdentifier) {
+        guard task != .invalid else { return }
+        let end = {
+            UIApplication.shared.endBackgroundTask(task)
+        }
+        if Thread.isMainThread {
+            end()
+        } else {
+            DispatchQueue.main.sync(execute: end)
+        }
+    }
+    #endif
+
     /// Ack immediately so the watch can tell "iPhone has the file" apart
     /// from "iPhone is still working on it", then process in order.
     /// The URL is our own tmp copy (see takeOwnership).
