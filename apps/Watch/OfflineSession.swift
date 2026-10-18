@@ -254,7 +254,9 @@ final class OfflineSession: NSObject, ObservableObject {
         // Render to buffers; each buffer is converted to 24kHz mono and
         // played through the engine's player node.
         synthesizer.write(utterance) { [weak self] buffer in
-            guard let self, let data = Self.pcm24kMono(from: buffer) else { return }
+            guard let self,
+                  let pcmBuffer = buffer as? AVAudioPCMBuffer,
+                  let data = Self.pcm24kMono(from: pcmBuffer) else { return }
             // DuplexAudio.play is thread-safe (internal serial queue).
             self.audio.play(data)
         }
