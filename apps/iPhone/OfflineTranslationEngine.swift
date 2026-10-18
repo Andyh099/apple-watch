@@ -204,7 +204,12 @@ final class OfflineTranslationEngine {
     private var processing = false
     /// Latest "开始连续翻译" tap seen from the watch. Files from older
     /// taps are discarded so each test starts with a clean slate.
-    private var latestSessionStart: TimeInterval = 0
+    /// Persisted: without this, an iPhone restart loses the filter and
+    /// old queued files flood in as "new".
+    private var latestSessionStart: TimeInterval {
+        get { UserDefaults.standard.double(forKey: "WristInterpreter.latestSessionStart") }
+        set { UserDefaults.standard.set(newValue, forKey: "WristInterpreter.latestSessionStart") }
+    }
 
     #if os(iOS)
     /// Background task keeping the app alive while the serial queue drains.
