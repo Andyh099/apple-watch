@@ -139,15 +139,25 @@ final class OfflineTranslationEngine {
     /// from "iPhone is still working on it", then process in order.
     /// The URL is our own tmp copy (see takeOwnership).
     func received(_ url: URL, metadata: [String: Any]?) async {
-        WCSession.default.transferUserInfo(["received": true])
-        // Drop files that queued while the app was closed (previous tests,
-        // old builds). Without this they error out and pollute the current
-        // test with stale "no speech detected" failures.
+        // Drop files that shouldn't be processed — BEFORE acking, so the
+        // watch's "已收" counter only reflects files actually accepted.
+        // 1) Queued too long (>5 min, e.g. app was closed).
+        // 2) From a previous "开始连续翻译" tap (user starts a new test).
         if let sentAt = metadata?["sentAt"] as? Double,
            Date().timeIntervalSince1970 - sentAt > 300 {
             try? FileManager.default.removeItem(at: url)
             return
         }
+        if let sessionStart = metadata?["sessionStartAt"] as? Double {
+            if sessionStart < latestSessionStart {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            if sessionStart > latestSessionStart {
+                latestSessionStart = sessionStart
+            }
+        }
+        WCSession.default.transferUserInfo(["received": true])
         enqueue((url, metadata))
     }
 
@@ -162,6 +172,9 @@ final class OfflineTranslationEngine {
     /// watch speaks translations back in the order they were spoken.
     private var queue: [(url: URL, metadata: [String: Any]?)] = []
     private var processing = false
+    /// Latest "开始连续翻译" tap seen from the watch. Files from older
+    /// taps are discarded so each test starts with a clean slate.
+    private var latestSessionStart: TimeInterval = 0
 
     #if os(iOS)
     /// Background task keeping the app alive while the serial queue drains.

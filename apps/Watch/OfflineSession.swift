@@ -49,6 +49,9 @@ final class OfflineSession: NSObject, ObservableObject {
     private var runtimeSession: WKExtendedRuntimeSession?
     private let synthesizer = AVSpeechSynthesizer()
     private var sessionID = UUID()
+    /// When the current tap of "开始连续翻译" began. Sent with every file so
+    /// the iPhone can drop files from previous taps.
+    private var sessionStartAt: TimeInterval = 0
 
     private override init() {
         super.init()
@@ -84,6 +87,7 @@ final class OfflineSession: NSObject, ObservableObject {
     private func beginCapture() async throws {
         let id = UUID()
         sessionID = id
+        sessionStartAt = Date().timeIntervalSince1970
         let (stream, continuation) = AsyncStream<Data>.makeStream()
         frameContinuation = continuation
         beginExtendedRuntime()
@@ -188,6 +192,10 @@ final class OfflineSession: NSObject, ObservableObject {
             // while it was closed (old builds / previous tests) instead of
             // erroring on them and confusing the current test.
             "sentAt": Date().timeIntervalSince1970,
+            // Session ID: the iPhone discards files from a previous
+            // "开始连续翻译" tap, so each test starts with a clean slate.
+            "sessionID": sessionID.uuidString,
+            "sessionStartAt": sessionStartAt,
         ])
         sentCount += 1
         notice = "已发送 \(sentCount) 句，等待手机识别…"
