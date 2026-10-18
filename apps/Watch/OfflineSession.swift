@@ -19,7 +19,7 @@ final class OfflineSession: NSObject, ObservableObject {
     static let shared = OfflineSession()
     /// Build tag shown in the UI so a screenshot tells which push is running.
     /// Bump on every push.
-    static let buildTag = "b20261017-10"
+    static let buildTag = "b20261017-11"
 
     enum Phase: Equatable {
         case idle, listening, failed(String)
@@ -62,6 +62,12 @@ final class OfflineSession: NSObject, ObservableObject {
     private override init() {
         super.init()
         synthesizer.delegate = self
+        // Don't let the synthesizer hijack our .playAndRecord session:
+        // it renders to buffers for engine playback, so it must not
+        // reconfigure the shared audio session (which would kill the mic).
+        if synthesizer.responds(to: #selector(setter: AVSpeechSynthesizer.usesApplicationAudioSession)) {
+            synthesizer.usesApplicationAudioSession = false
+        }
     }
 
     // MARK: - Session control
@@ -101,19 +107,19 @@ final class OfflineSession: NSObject, ObservableObject {
         notice = "直接说话，自动分句翻译"
         frameTask?.cancel()
         frameTask = Task { await self.consumeFrames(stream) }
-        // .voiceChat + voice processing: the echo canceller / noise suppressor
-        // gives clean voice audio with proper gain. The howl we saw before
-        // was because TTS bypassed the engine (no far-end reference); now
-        // TTS is rendered and played through the engine, so the canceller
-        // has its reference and stays stable.
-        try await audio.prepareForConnection(sessionID: id, mode: .voiceChat)
+        // .default mode: plain recording, no VoIP tuning. Voice processing
+        // is off because the echo canceller howls with no far-end reference
+        // (TTS bypasses the engine in this configuration).
+        // Note: .voiceChat + VP was tried (b20261017-10) but left the mic
+        // silent on this watchOS version; .default at least delivers audio.
+        try await audio.prepareForConnection(sessionID: id, mode: .default)
         try await audio.start(
             sessionID: id,
             onFrame: { data in continuation.yield(data) },
             onFailure: { [weak self] message in
                 Task { @MainActor [weak self] in self?.fail(message) }
             },
-            voiceProcessing: true
+            voiceProcessing: false
         )
         notice = "直接说话，自动分句翻译"
     }
@@ -239,32 +245,20 @@ final class OfflineSession: NSObject, ObservableObject {
 
     // MARK: - Speak the translation on the watch speaker (offline voices)
 
-    /// Renders TTS to PCM and plays it through the audio engine (not the
-    /// raw speaker). This gives the voice-processing echo canceller its
-    /// far-end reference, so it doesn't diverge into a howl during capture.
     private func speak(_ text: String, languageCode: String?) {
         let utterance = AVSpeechUtterance(string: text)
         if let code = languageCode,
            let voice = AVSpeechSynthesisVoice(language: code) {
             utterance.voice = voice
         }
+        // Direct speaker playback (not through the engine): with voice
+        // processing off there is no echo canceller needing a far-end
+        // reference, and VAD is paused while speaking anyway.
         ttsGeneration += 1
         let gen = ttsGeneration
         ttsSpeaking = true
-        // Render to buffers; each buffer is converted to 24kHz mono and
-        // played through the engine's player node.
-        synthesizer.write(utterance) { [weak self] buffer in
-            guard let self,
-                  let pcmBuffer = buffer as? AVAudioPCMBuffer,
-                  let data = Self.pcm24kMono(from: pcmBuffer) else { return }
-            // DuplexAudio.play is thread-safe (internal serial queue).
-            self.audio.play(data)
-        }
-        // Safety net: resume VAD after an estimated duration. The delegate
-        // didFinish may fire first (if write mode triggers it); the
-        // generation check prevents stale timers from interfering.
-        // The VP echo canceller should already be stripping TTS from the
-        // mic, so this pause is belt-and-braces.
+        synthesizer.speak(utterance)
+        // Safety net: resume VAD after an estimated duration.
         let estimatedSeconds = Double(text.count) / 8.0 + 3.0
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(estimatedSeconds * 1_000_000_000))
@@ -272,36 +266,6 @@ final class OfflineSession: NSObject, ObservableObject {
                 self?.ttsSpeaking = false
             }
         }
-    }
-
-    /// Converts a synthesizer PCM buffer to 24kHz 16-bit mono Data for
-    /// DuplexAudio.play. Returns nil if conversion fails.
-    private static func pcm24kMono(from buffer: AVAudioPCMBuffer) -> Data? {
-        guard buffer.frameLength > 0,
-              let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1),
-              let converter = AVAudioConverter(from: buffer.format, to: targetFormat)
-        else { return nil }
-        let ratio = 24_000.0 / buffer.format.sampleRate
-        let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outFrames) else { return nil }
-        var convError: NSError?
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            outStatus.pointee = .haveData
-            return buffer
-        }
-        converter.convert(to: outBuffer, error: &convError, withInputFrom: inputBlock)
-        guard convError == nil, outBuffer.frameLength > 0,
-              let floatPtr = outBuffer.floatChannelData
-        else { return nil }
-        let n = Int(outBuffer.frameLength)
-        var data = Data(count: n * 2)
-        data.withUnsafeMutableBytes { (dst: UnsafeMutableRawBufferPointer) in
-            for i in 0..<n {
-                let clamped = max(-1.0, min(1.0, Double(floatPtr[0][i])))
-                dst.storeBytes(of: Int16(clamped * 32767).littleEndian, toByteOffset: i * 2, as: Int16.self)
-            }
-        }
-        return data
     }
 
     // MARK: - Keep-alive
@@ -354,11 +318,11 @@ extension OfflineSession: AVSpeechSynthesizerDelegate {
     ) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // In write mode, isSpeaking may not reflect the buffer playback.
-            // The safety timer in speak() handles the timing; the delegate
-            // is a backup. Only clear if no newer TTS started.
-            self.ttsGeneration += 1
-            self.ttsSpeaking = false
+            // Resume listening only when the whole TTS queue drained.
+            if !synthesizer.isSpeaking {
+                self.ttsGeneration += 1
+                self.ttsSpeaking = false
+            }
         }
     }
 
