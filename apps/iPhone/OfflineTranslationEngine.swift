@@ -509,6 +509,13 @@ final class OfflineTranslationEngine {
         }
     }
 
+    /// The language of the last successfully recognized utterance. Used for
+    /// stickiness: in a real conversation people don't switch languages every
+    /// sentence, and for very short utterances (grunts, "嗯", "No") the
+    /// language ID is basically a coin flip. A short utterance sticks with
+    /// the previous language unless the other side is clearly more confident.
+    private var lastLanguage: OfflineLanguage?
+
     private func pickBest(
         a: (String, OfflineLanguage),
         b: (String, OfflineLanguage)
@@ -522,11 +529,28 @@ final class OfflineTranslationEngine {
         }
         let scoreA = score(a.0, a.1)
         let scoreB = score(b.0, b.1)
-        if scoreA == 0 && scoreB == 0 {
+        let result: (String, OfflineLanguage)
+        // Short utterances: language ID is unreliable. If we were just
+        // speaking a language, stick with it unless the other side wins
+        // by a clear margin.
+        if (a.0.count + b.0.count) < 6, let last = lastLanguage {
+            let (lastText, lastScore, otherScore) =
+                last == a.1 ? (a, scoreA, scoreB) : (b, scoreB, scoreA)
+            if lastScore > 0.25 && lastScore >= otherScore - 0.25 {
+                result = (lastText.0, last)
+            } else if scoreA == 0 && scoreB == 0 {
+                result = a.0.count >= b.0.count ? a : b
+            } else {
+                result = scoreA >= scoreB ? a : b
+            }
+        } else if scoreA == 0 && scoreB == 0 {
             // Very short utterances may not identify: longer transcript wins.
-            return a.0.count >= b.0.count ? a : b
+            result = a.0.count >= b.0.count ? a : b
+        } else {
+            result = scoreA >= scoreB ? a : b
         }
-        return scoreA >= scoreB ? a : b
+        lastLanguage = result.1
+        return result
     }
 
     // MARK: - On-device translation (iOS 26+)
