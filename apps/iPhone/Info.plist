@@ -4,6 +4,11 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<!-- 后台模式：让系统在手表发来音频时唤醒 App（否则后台刷新列表里没有它，后台收不到文件） -->
 	<key>CFBundleDisplayName</key>
 	<string>腕译</string>
 	<key>CFBundleExecutable</key>

@@ -19,7 +19,7 @@ final class OfflineSession: NSObject, ObservableObject {
     static let shared = OfflineSession()
     /// Build tag shown in the UI so a screenshot tells which push is running.
     /// Bump on every push.
-    static let buildTag = "b20261017-7"
+    static let buildTag = "b20261017-8"
 
     enum Phase: Equatable {
         case idle, listening, failed(String)
