@@ -108,7 +108,7 @@ struct InterpreterView: View {
             }
             .padding(.horizontal, 4)
             if offline.sentCount > 0 {
-                Text("发送 \(offline.sentCount) · 送达 \(offline.deliveredCount) · 已收 \(offline.receivedCount) · 已译 \(offline.utteranceCount)").font(.caption2).foregroundStyle(.secondary)
+                Text("发送 \(offline.sentCount) · 送达 \(offline.deliveredCount) · 已收 \(offline.receivedCount) · 已译 \(offline.utteranceCount) · \(OfflineSession.buildTag)").font(.caption2).foregroundStyle(.secondary)
             }
             if offline.isRunning {
                 Text("麦克风电平 \(Int(offline.micLevel))（说话时应明显大于 0）").font(.caption2).foregroundStyle(.secondary)
